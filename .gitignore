@@ -1,0 +1,35 @@
+# Swift / SPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Build output
+NetworkMonitor.app/
+NetworkMonitor.dmg
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary
+*.tmp
+*.bak
+*.swp
+
+# AI/ML Tools
+.claude/
+.mimocode/
+.cursor/
+.opencode/

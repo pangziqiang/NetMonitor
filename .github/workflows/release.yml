@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+      - name: Install sqlite
+        run: brew install sqlite
+      - name: Build Release
+        run: swift build -c release
+        env:
+          PKG_CONFIG_PATH: /opt/homebrew/opt/sqlite/lib/pkgconfig
+      - name: Create App Bundle
+        run: bash build-app.sh --release --no-run
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetworkMonitor.app
+          path: NetworkMonitor.app/
