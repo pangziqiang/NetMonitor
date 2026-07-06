@@ -146,5 +146,7 @@ public enum L10n {
         "Move Up": "上移",
         "Move Down": "下移",
         "Date": "日期",
+        "View Details": "查看详情",
+        "View Traffic Details": "双击查看流量统计",
     ]
 }

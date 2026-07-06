@@ -34,7 +34,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let mgr = StatusItemManager(engine: engine, system: system, appState: appState, settings: settings)
         mgr.setup()
         statusItemManager = mgr
-        floatingWindowManager = FloatingWindowManager(engine: engine, system: system, settings: settings) {
+        floatingWindowManager = FloatingWindowManager(engine: engine, system: system, settings: settings,
+            onDoubleClick: { [weak self] in
+                self?.appState.settingsTab = .general
+                NotificationCenter.default.post(name: Self.openSettingsNotification, object: nil)
+            }) {
             NotificationCenter.default.post(name: Self.openSettingsNotification, object: nil)
         }
         floatingWindowManager?.update()

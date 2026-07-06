@@ -52,7 +52,6 @@ struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var appState: AppState
     @Environment(\.colorScheme) var colorScheme
-    @State private var selectedTab: SettingsTab = .general
     @State private var showWarningAlert = false
     @State private var cachedVisibility: VisibilityHelper?
     var floatingWindowManager: FloatingWindowManager?
@@ -78,14 +77,14 @@ struct SettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             settingsTabBar.padding(.top, 20).padding(.horizontal, 20)
-            if selectedTab == .general {
+            if appState.settingsTab == .general {
                 VStack(alignment: .leading, spacing: 0) {
                     generalSettings
                 }
                 .padding(.horizontal, 20).padding(.bottom, 20)
                 .padding(.top, Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-            } else if selectedTab == .history {
+            } else if appState.settingsTab == .history {
                 VStack(alignment: .leading, spacing: 0) {
                     HistoryView(unit: settings.displayUnit)
                 }
@@ -113,9 +112,9 @@ struct SettingsView: View {
     private var settingsTabBar: some View {
         HStack(spacing: 0) {
             ForEach(SettingsTab.allCases, id: \.self) { tab in
-                let isSelected = selectedTab == tab
+                let isSelected = appState.settingsTab == tab
                 Button {
-                    withAnimation(.easeInOut(duration: 0.15)) { selectedTab = tab }
+                    withAnimation(.easeInOut(duration: 0.15)) { appState.settingsTab = tab }
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: tab.icon).font(.system(size: 12))

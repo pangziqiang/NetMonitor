@@ -139,6 +139,22 @@ struct MenuBarPopover: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(color.opacity(0.15), lineWidth: 0.5)
         )
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { openTrafficStatistics() }
+        .contextMenu {
+            Button {
+                openTrafficStatistics()
+            } label: {
+                Label(L10n.tr("View Details"), systemImage: "chart.bar.fill")
+            }
+        }
+        .help(L10n.tr("View Traffic Details"))
+    }
+
+    private func openTrafficStatistics() {
+        appState.settingsTab = .history
+        openWindow(id: "settings")
+        NSApp.activate()
     }
 
     private func periodToggle(showSession: Binding<Bool>, color: Color = .accentPurple) -> some View {

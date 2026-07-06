@@ -70,3 +70,16 @@ NetworkMonitor/
 └── Tests/
     └── NetworkMonitorTests/
 ```
+
+## 浮窗按行双击跳转不同页（方案 B，待实施）
+
+双击浮窗不同行跳转不同设置页：
+- 速度/流量行 → `.history`（流量统计页）
+- CPU/GPU/内存行 → `.general`（通用页）
+
+实现要点：
+1. `FloatingWindowView.mouseDown(with:)` 用 `event.locationInWindow` hit-test 每行的 `NSRect`
+2. 行 rect 从 `buildRows()` 行序推算（rowHeight=24, padding=10, y 居中偏移 = (bounds.height - rowCount*24)/2）
+3. `onDoubleClick` 改签名为 `((SettingsTab) -> Void)?`，导航侧注入不同 tab
+4. `NetworkMonitorApp` 的 `onDoubleClick` 闭包接收 `SettingsTab` 参数设 `appState.settingsTab`
+

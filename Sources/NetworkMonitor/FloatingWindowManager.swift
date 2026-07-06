@@ -11,12 +11,16 @@ class FloatingWindowManager {
     private var panel: NSPanel?
     private var hostingView: FloatingWindowView?
     private let onOpenSettings: (() -> Void)?
+    private let onDoubleClick: (() -> Void)?
     private static let floatingWindowLevel = NSWindow.Level(rawValue: 103)
 
-    init(engine: NetworkMonitorEngine, system: SystemMonitor, settings: AppSettings, onOpenSettings: (() -> Void)? = nil) {
+    init(engine: NetworkMonitorEngine, system: SystemMonitor, settings: AppSettings,
+         onDoubleClick: (() -> Void)? = nil,
+         onOpenSettings: (() -> Void)? = nil) {
         self.engine = engine
         self.system = system
         self.settings = settings
+        self.onDoubleClick = onDoubleClick
         self.onOpenSettings = onOpenSettings
         setupObservation()
     }
@@ -100,6 +104,7 @@ class FloatingWindowManager {
     private func createPanel() {
         let view = FloatingWindowView(frame: NSRect(x: 0, y: 0, width: 240, height: 140))
         view.floatingWindowManager = self
+        view.onDoubleClick = { [weak self] in self?.onDoubleClick?() }
         hostingView = view
 
         // Initial position: top-right corner
@@ -191,6 +196,7 @@ private class FloatingWindowView: NSView {
     var dataUnit: DataUnit = .auto
 
     weak var floatingWindowManager: FloatingWindowManager?
+    var onDoubleClick: (() -> Void)?
 
     // MARK: - Color Constants
     private static let downloadColor = NSColor(red: 0x34/255.0, green: 0xd3/255.0, blue: 0x99/255.0, alpha: 1.0)
@@ -205,6 +211,13 @@ private class FloatingWindowView: NSView {
 
     override func rightMouseDown(with event: NSEvent) {
         floatingWindowManager?.showContextMenu()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            onDoubleClick?()
+        }
+        super.mouseDown(with: event)
     }
 
     // MARK: - Accessibility
