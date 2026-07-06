@@ -148,5 +148,10 @@ public enum L10n {
         "Date": "日期",
         "View Details": "查看详情",
         "View Traffic Details": "双击查看流量统计",
+        "Top Processes": "活跃应用",
+        "By CPU": "按 CPU",
+        "By Memory": "按内存",
+        "Show Top Processes": "显示活跃进程",
+        "Process Count": "显示数量",
     ]
 }

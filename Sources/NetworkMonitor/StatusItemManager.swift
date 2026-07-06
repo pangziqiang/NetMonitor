@@ -24,7 +24,7 @@ class StatusItemManager: NSObject {
     private var hostingView: NSHostingView<AnyView>?
     private var eventMonitor: Any?
     private var hostingController: NSHostingController<AnyView>?
-    private var resizeTimer: Timer?
+    private var resizeCancellable: AnyCancellable?
 
     let engine: NetworkMonitorEngine
     let system: SystemMonitor
@@ -97,13 +97,23 @@ class StatusItemManager: NSObject {
         popoverWindow = panel
         PopoverManager.shared.panel = panel
 
+        resizeCancellable = PopoverManager.shared.$contentSize
+            .removeDuplicates { abs($0.height - $1.height) < 1 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] newSize in
+                guard let self, let panel = self.popoverWindow, panel.isVisible else { return }
+                guard newSize.height > 0, newSize.width > 0 else { return }
+                let frame = panel.frame
+                guard abs(frame.height - newSize.height) > 1 else { return }
+                let newY = frame.origin.y + frame.height - newSize.height
+                panel.setFrame(NSRect(x: frame.origin.x, y: newY, width: frame.width, height: newSize.height), display: true, animate: false)
+            }
+
         // Close panel when clicking outside (unless pinned)
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak panel, weak self] _ in
             guard let panel, panel.isVisible else { return }
             guard let self, !PopoverManager.shared.isPinned else { return }
             panel.orderOut(nil)
-            self.resizeTimer?.invalidate()
-            self.resizeTimer = nil
         }
     }
 
@@ -111,8 +121,6 @@ class StatusItemManager: NSObject {
         guard let button = statusItem?.button, let panel = popoverWindow else { return }
         if panel.isVisible {
             panel.orderOut(nil)
-            resizeTimer?.invalidate()
-            resizeTimer = nil
         } else {
             let buttonRect = button.convert(button.bounds, to: nil)
             guard let screenRect = button.window?.convertToScreen(buttonRect) else { return }
@@ -125,7 +133,6 @@ class StatusItemManager: NSObject {
             panel.setFrame(NSRect(x: x, y: y, width: panelW, height: panelH), display: true)
             panel.makeKeyAndOrderFront(nil)
             NSApp.activate()
-            startResizeTimer()
         }
     }
 
@@ -136,40 +143,21 @@ class StatusItemManager: NSObject {
         return size.height
     }
 
-    private func startResizeTimer() {
-        resizeTimer?.invalidate()
-        resizeTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, let panel = self.popoverWindow, panel.isVisible else {
-                    self?.resizeTimer?.invalidate()
-                    return
-                }
-                let newHeight = max(self.measureContentHeight(), 400)
-                let frame = panel.frame
-                guard abs(frame.height - newHeight) > 2 else { return }
-                let newY = frame.origin.y + frame.height - newHeight
-                panel.setFrame(NSRect(x: frame.origin.x, y: newY, width: frame.width, height: newHeight), display: true, animate: true)
-            }
-        }
-    }
-
     func cleanup() {
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
         }
-        resizeTimer?.invalidate()
-        resizeTimer = nil
+        resizeCancellable?.cancel()
+        resizeCancellable = nil
         popoverWindow?.orderOut(nil)
     }
 
     deinit {
-        // Event monitor removal must happen; deinit runs on arbitrary thread
-        // but NSEvent.removeMonitor is safe from any thread
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
         }
-        resizeTimer?.invalidate()
+        resizeCancellable?.cancel()
     }
 }
 

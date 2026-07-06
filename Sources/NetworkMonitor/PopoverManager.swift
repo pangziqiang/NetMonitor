@@ -36,6 +36,8 @@ class PopoverManager: ObservableObject {
 
     @Published var hasMoved = false
 
+    @Published var contentSize: CGSize = .zero
+
     func togglePin() {
         isPinned.toggle()
     }

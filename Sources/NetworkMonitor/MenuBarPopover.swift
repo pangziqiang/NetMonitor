@@ -1,5 +1,6 @@
 import NetworkMonitorCore
 import SwiftUI
+import AppKit
 
 struct MenuBarPopover: View {
     @ObservedObject var engine: NetworkMonitorEngine
@@ -11,6 +12,7 @@ struct MenuBarPopover: View {
     @Environment(\.colorScheme) var colorScheme
     @State private var uploadShowSession = false
     @State private var downloadShowSession = false
+    @State private var processSortByCPU = true
 
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
 
@@ -19,6 +21,9 @@ struct MenuBarPopover: View {
             headerSection
             trafficSection
             systemSection
+            if settings.menuShowTopProcesses {
+                topProcessesSection
+            }
             actionsSection
         }
         .padding(.vertical, Spacing.sm)
@@ -35,6 +40,27 @@ struct MenuBarPopover: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
+        .overlay(
+            GeometryReader { proxy in
+                Color.clear
+                    .onChange(of: proxy.size) { _, newSize in
+                        PopoverManager.shared.contentSize = newSize
+                    }
+            }
+        )
+        .onAppear {
+            system.processMonitor.maxProcesses = settings.menuTopProcessesCount
+            system.processMonitor.isActive = true
+        }
+        .onDisappear {
+            system.processMonitor.isActive = false
+        }
+        .onChange(of: settings.menuTopProcessesCount) { _, newCount in
+            system.processMonitor.maxProcesses = newCount
+        }
+        .onChange(of: settings.menuShowTopProcesses) { _, show in
+            if !show { system.processMonitor.isActive = false }
+        }
     }
 
     // MARK: - Header
@@ -310,6 +336,141 @@ struct MenuBarPopover: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 60)
         }
+    }
+
+    // MARK: - Top Processes
+
+    private var topProcessesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider().opacity(0.2).padding(.horizontal, Spacing.md)
+
+            HStack(spacing: 8) {
+                Image(systemName: "app.badge").font(.system(size: 11)).foregroundColor(theme.textMuted)
+                Text(L10n.tr("Top Processes")).font(.system(size: 11)).foregroundColor(theme.textMuted)
+                Spacer()
+                processSortToggle
+            }
+            .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.sm)
+
+            let processes = processSortByCPU ? system.processMonitor.topByCPU : system.processMonitor.topByMemory
+            VStack(spacing: 2) {
+                ForEach(Array(processes.enumerated()), id: \.element.pid) { _, snap in
+                    processRow(snap)
+                }
+                if let selfSnap = system.processMonitor.selfInfo {
+                    Divider().opacity(0.15).padding(.vertical, 2)
+                    selfProcessRow(selfSnap)
+                }
+            }
+            .padding(.horizontal, Spacing.md).padding(.bottom, Spacing.sm)
+        }
+    }
+
+    private var processSortToggle: some View {
+        HStack(spacing: 0) {
+            Button(L10n.tr("By CPU")) {
+                withAnimation(.easeInOut(duration: 0.15)) { processSortByCPU = true }
+            }
+            .font(.system(size: 9, weight: .medium))
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(processSortByCPU ? Color.downloadColor.opacity(0.15) : Color.clear)
+            .foregroundColor(processSortByCPU ? .downloadColor : theme.textMuted.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            Button(L10n.tr("By Memory")) {
+                withAnimation(.easeInOut(duration: 0.15)) { processSortByCPU = false }
+            }
+            .font(.system(size: 9, weight: .medium))
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(!processSortByCPU ? Color.downloadColor.opacity(0.15) : Color.clear)
+            .foregroundColor(!processSortByCPU ? .downloadColor : theme.textMuted.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func processRow(_ snap: ProcessSnapshot) -> some View {
+        HStack(spacing: 8) {
+            if let icon = processIcon(for: snap.pid) {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 16, height: 16)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            } else {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(theme.textMuted.opacity(0.2))
+                    .frame(width: 16, height: 16)
+            }
+
+            Text(processDisplayName(for: snap))
+                .font(.system(size: 12))
+                .foregroundColor(theme.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer()
+
+            Text(String(format: "%.1f%%", snap.cpuPercent))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(cpuPercentColor(snap.cpuPercent))
+
+            Text(formatBytes(snap.rssBytes, dataUnit: settings.dataUnit))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(.memoryColor)
+                .frame(width: 64, alignment: .trailing)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(theme.appBg.opacity(0.3))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func selfProcessRow(_ snap: ProcessSnapshot) -> some View {
+        HStack(spacing: 8) {
+            if let icon = NSRunningApplication.current.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 16, height: 16)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            } else {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.downloadColor.opacity(0.3))
+                    .frame(width: 16, height: 16)
+            }
+
+            Text("NetMonitor")
+                .font(.system(size: 12))
+                .foregroundColor(theme.textSecondary)
+
+            Spacer()
+
+            Text(String(format: "%.1f%%", snap.cpuPercent))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(cpuPercentColor(snap.cpuPercent))
+
+            Text(formatBytes(snap.rssBytes, dataUnit: settings.dataUnit))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(.memoryColor)
+                .frame(width: 64, alignment: .trailing)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Color.downloadColor.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func cpuPercentColor(_ pct: Double) -> Color {
+        if pct < 10 { return .downloadColor }
+        if pct < 40 { return .cpuColor }
+        return .errorColor
+    }
+
+    private func processIcon(for pid: Int32) -> NSImage? {
+        NSRunningApplication(processIdentifier: pid)?.icon
+    }
+
+    private func processDisplayName(for snap: ProcessSnapshot) -> String {
+        if let app = NSRunningApplication(processIdentifier: snap.pid), let name = app.localizedName, !name.isEmpty {
+            return name
+        }
+        return snap.name
     }
 
     // MARK: - Actions

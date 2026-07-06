@@ -189,6 +189,30 @@ struct SettingsView: View {
                 }
             }
 
+            settingsSection(L10n.tr("Process Monitor"), textColor: theme.textMuted) {
+                HStack {
+                    Image(systemName: "app.badge").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
+                    Text(L10n.tr("Show Top Processes")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                    Spacer()
+                    Toggle("", isOn: $settings.menuShowTopProcesses)
+                        .toggleStyle(.switch).controlSize(.small).accessibilityLabel(L10n.tr("Show Top Processes"))
+                }
+                HStack {
+                    Image(systemName: "number").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
+                    Text(L10n.tr("Process Count")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                    Spacer()
+                    Picker("", selection: $settings.menuTopProcessesCount) {
+                        Text("3").tag(3)
+                        Text("5").tag(5)
+                        Text("8").tag(8)
+                        Text("10").tag(10)
+                    }
+                    .pickerStyle(.menu).frame(width: 60)
+                    .disabled(!settings.menuShowTopProcesses)
+                    .opacity(settings.menuShowTopProcesses ? 1.0 : 0.4)
+                }
+            }
+
             settingsSection(L10n.tr("Unit"), textColor: theme.textMuted) {
                 pickerRow(L10n.tr("Speed Unit"), icon: "speedometer", selection: $settings.displayUnitRaw, options: DisplayUnit.allCases)
                 dataPickerRow(L10n.tr("Traffic Unit"), icon: "chart.pie.fill", selection: $settings.dataUnitRaw, options: DataUnit.allCases)

@@ -43,6 +43,12 @@ public class AppSettings: ObservableObject {
     @Published public var menuShowMemory: Bool = false {
         didSet { if !isLoadingDefaults { userDefaults.set(menuShowMemory, forKey: "menuShowMemory") } }
     }
+    @Published public var menuShowTopProcesses: Bool = true {
+        didSet { if !isLoadingDefaults { userDefaults.set(menuShowTopProcesses, forKey: "menuShowTopProcesses") } }
+    }
+    @Published public var menuTopProcessesCount: Int = 8 {
+        didSet { if !isLoadingDefaults { userDefaults.set(menuTopProcessesCount, forKey: "menuTopProcessesCount") } }
+    }
     @Published public var menuBarOrderRaw: String = "speed,dailyTraffic,cpu,gpu,memory" {
         didSet { if !isLoadingDefaults { userDefaults.set(menuBarOrderRaw, forKey: "menuBarOrder") } }
     }
@@ -138,6 +144,8 @@ public class AppSettings: ObservableObject {
             "menuShowCPU": false,
             "menuShowGPU": false,
             "menuShowMemory": false,
+            "menuShowTopProcesses": true,
+            "menuTopProcessesCount": 8,
             "menuBarOrder": "speed,dailyTraffic,cpu,gpu,memory"
         ])
     }
@@ -160,6 +168,9 @@ public class AppSettings: ObservableObject {
         menuShowCPU = userDefaults.bool(forKey: "menuShowCPU")
         menuShowGPU = userDefaults.bool(forKey: "menuShowGPU")
         menuShowMemory = userDefaults.bool(forKey: "menuShowMemory")
+        menuShowTopProcesses = userDefaults.bool(forKey: "menuShowTopProcesses")
+        menuTopProcessesCount = userDefaults.integer(forKey: "menuTopProcessesCount")
+        if menuTopProcessesCount < 3 || menuTopProcessesCount > 10 { menuTopProcessesCount = 8 }
         let validItems: Set<String> = ["speed", "dailyTraffic", "cpu", "gpu", "memory"]
         if let stored = userDefaults.string(forKey: "menuBarOrder") {
             let items = stored.split(separator: ",").map(String.init).filter { validItems.contains($0) }

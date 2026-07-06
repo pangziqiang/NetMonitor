@@ -158,6 +158,9 @@ public class SystemMonitor: ObservableObject {
     @Published public var gpuTemperatureHistory: [Double] = []
     @Published public var memoryTemperatureHistory: [Double] = []
 
+    // Process monitoring
+    public let processMonitor = ProcessMonitor()
+
     public var historyMax = 120 {
         didSet { historyMax = max(30, min(600, historyMax)) }
     }
@@ -203,6 +206,7 @@ public class SystemMonitor: ObservableObject {
         timer?.invalidate()
         timer = nil
         thermal.disconnect()
+        processMonitor.stop()
     }
 
     deinit {
@@ -285,6 +289,8 @@ public class SystemMonitor: ObservableObject {
                 if self.gpuTemperatureHistory.count > self.historyMax { self.gpuTemperatureHistory.removeFirst() }
                 self.memoryTemperatureHistory.append(atm.mem ?? self.memoryTemperatureHistory.last ?? 0)
                 if self.memoryTemperatureHistory.count > self.historyMax { self.memoryTemperatureHistory.removeFirst() }
+
+                self.processMonitor.tick()
             }
         }
     }
