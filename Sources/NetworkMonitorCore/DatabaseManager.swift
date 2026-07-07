@@ -80,12 +80,11 @@ public class DatabaseManager {
 
     deinit {
         flushTimer?.invalidate()
-        closed = true
-        // Flush remaining data synchronously to avoid data loss
         flushPendingTrafficSync()
-        // Close DB on the queue to avoid concurrent access
-        queue.async { [db] in
-            if let db { sqlite3_close(db) }
+        closed = true
+        let dbToClose = db
+        queue.async {
+            if let db = dbToClose { sqlite3_close(db) }
         }
     }
 
@@ -112,6 +111,16 @@ public class DatabaseManager {
             )
         """)
         try exec("CREATE INDEX IF NOT EXISTS idx_minutely_ts ON traffic_minutely(timestamp)")
+        try exec("""
+            CREATE TABLE IF NOT EXISTS app_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                category TEXT NOT NULL,
+                event TEXT NOT NULL,
+                detail TEXT
+            )
+        """)
+        try exec("CREATE INDEX IF NOT EXISTS idx_events_ts ON app_events(timestamp)")
     }
 
     private func exec(_ sql: String) throws {
@@ -166,6 +175,7 @@ public class DatabaseManager {
             self.flushCount += 1
             if self.flushCount % 60 == 0 {
                 self._retainMinutely()
+                self.retainEvents()
             }
         }
     }
@@ -325,6 +335,125 @@ public class DatabaseManager {
                 }
             }
             return result
+        }
+    }
+
+    // MARK: - Event Logging
+
+    private let EVENT_RETENTION_DAYS = 90
+
+    public func insertEvent(timestamp: String, category: String, event: String, detail: String?) {
+        queue.async { [weak self] in
+            guard let self, !self.closed else { return }
+            self._insertEvent(ts: timestamp, category: category, event: event, detail: detail)
+        }
+    }
+
+    private func _insertEvent(ts: String, category: String, event: String, detail: String?) {
+        guard let db else { return }
+        var stmt: OpaquePointer?
+        let sql = "INSERT INTO app_events (timestamp, category, event, detail) VALUES (?, ?, ?, ?)"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            os_log(.error, log: log, "insertEvent prepare failed: %{private}@", String(cString: sqlite3_errmsg(db)))
+            return
+        }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, ts, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, category, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 3, event, -1, SQLITE_TRANSIENT)
+        if let detail {
+            sqlite3_bind_text(stmt, 4, detail, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 4)
+        }
+        let rc = sqlite3_step(stmt)
+        if rc != SQLITE_DONE {
+            os_log(.error, log: log, "insertEvent step failed: %d", rc)
+        }
+    }
+
+    private func retainEvents() {
+        guard let db else { return }
+        let cutoff = ISO8601Formatter.string(from: Date().addingTimeInterval(-SECONDS_PER_DAY * Double(EVENT_RETENTION_DAYS)))
+        var stmt: OpaquePointer?
+        let sql = "DELETE FROM app_events WHERE timestamp < ?"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            os_log(.error, log: log, "retainEvents prepare failed: %{private}@", String(cString: sqlite3_errmsg(db)))
+            return
+        }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, cutoff, -1, SQLITE_TRANSIENT)
+        let rc = sqlite3_step(stmt)
+        if rc != SQLITE_DONE {
+            os_log(.error, log: log, "retainEvents step failed: %d", rc)
+        }
+    }
+
+    public func exportDiagnostics() -> String {
+        return queue.sync {
+            guard let db else { return "{}" }
+
+            var result: [String: Any] = [:]
+            result["exported_at"] = ISO8601Formatter.string(from: Date())
+            result["app_version"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") ?? "unknown"
+            result["os_version"] = ProcessInfo.processInfo.operatingSystemVersionString
+            result["processor_count"] = ProcessInfo.processInfo.processorCount
+
+            // Recent events
+            var events: [[String: String]] = []
+            var stmt: OpaquePointer?
+            let evSql = "SELECT timestamp, category, event, detail FROM app_events ORDER BY id DESC LIMIT 500"
+            if sqlite3_prepare_v2(db, evSql, -1, &stmt, nil) == SQLITE_OK {
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    var row: [String: String] = [:]
+                    row["ts"] = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+                    row["cat"] = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+                    row["evt"] = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+                    row["detail"] = sqlite3_column_text(stmt, 3).map { String(cString: $0) }
+                    events.append(row)
+                }
+            }
+            sqlite3_finalize(stmt)
+            result["events"] = events
+
+            // Today traffic (inline query to avoid queue.sync deadlock)
+            let dateStr = currentDateStamp()
+            var todayDown: UInt64 = 0
+            var todayUp: UInt64 = 0
+            stmt = nil
+            let tSql = "SELECT bytes_down, bytes_up FROM traffic_daily WHERE date = ?"
+            if sqlite3_prepare_v2(db, tSql, -1, &stmt, nil) == SQLITE_OK {
+                sqlite3_bind_text(stmt, 1, dateStr, -1, SQLITE_TRANSIENT)
+                if sqlite3_step(stmt) == SQLITE_ROW {
+                    todayDown = UInt64(sqlite3_column_int64(stmt, 0))
+                    todayUp = UInt64(sqlite3_column_int64(stmt, 1))
+                }
+            }
+            sqlite3_finalize(stmt)
+            result["today_traffic"] = ["down": todayDown, "up": todayUp]
+
+            // Recent daily traffic
+            var daily: [[String: Any]] = []
+            let dSql = "SELECT date, bytes_down, bytes_up FROM traffic_daily ORDER BY date DESC LIMIT 7"
+            stmt = nil
+            if sqlite3_prepare_v2(db, dSql, -1, &stmt, nil) == SQLITE_OK {
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    let date = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+                    daily.append([
+                        "date": date,
+                        "down": sqlite3_column_int64(stmt, 1),
+                        "up": sqlite3_column_int64(stmt, 2)
+                    ])
+                }
+            }
+            sqlite3_finalize(stmt)
+            result["daily_traffic"] = daily
+
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]),
+                  let json = String(data: jsonData, encoding: .utf8) else {
+                return "{}"
+            }
+            return json
         }
     }
 

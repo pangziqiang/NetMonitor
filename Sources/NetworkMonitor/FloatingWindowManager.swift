@@ -1,6 +1,7 @@
 import NetworkMonitorCore
 import AppKit
 import Combine
+import os
 
 @MainActor
 class FloatingWindowManager {
@@ -108,7 +109,10 @@ class FloatingWindowManager {
         hostingView = view
 
         // Initial position: top-right corner
-        guard let screen = NSScreen.main else { return }
+        guard let screen = NSScreen.main else {
+            os_log(.error, log: OSLog(subsystem: AppConstants.logSubsystem, category: "Floating"), "NSScreen.main is nil, cannot create floating panel")
+            return
+        }
         let screenFrame = screen.visibleFrame
         let initialX = screenFrame.maxX - 260
         let initialY = screenFrame.maxY - 160

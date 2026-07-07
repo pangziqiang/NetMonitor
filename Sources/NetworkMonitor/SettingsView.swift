@@ -53,17 +53,13 @@ struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.colorScheme) var colorScheme
     @State private var showWarningAlert = false
-    @State private var cachedVisibility: VisibilityHelper?
     var floatingWindowManager: FloatingWindowManager?
 
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
 
     // MARK: - Visibility Check
     private var visibility: VisibilityHelper {
-        if let cached = cachedVisibility { return cached }
-        let v = VisibilityHelper(settings: settings)
-        cachedVisibility = v
-        return v
+        VisibilityHelper(settings: settings)
     }
 
     private var hasMenuBarItem: Bool { visibility.hasMenuBarItem }
@@ -72,6 +68,18 @@ struct SettingsView: View {
 
     private func canDisable(_ element: String) -> Bool {
         visibility.canDisable(element)
+    }
+
+    private func exportDiagnostics() {
+        let json = DatabaseManager.shared?.exportDiagnostics() ?? "{}"
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "NetMonitor-diagnostic-\(ISO8601DateFormatter().string(from: Date())).json"
+        panel.title = L10n.tr("Export Diagnostics")
+        if panel.runModal() == .OK, let url = panel.url {
+            try? json.write(to: url, atomically: true, encoding: .utf8)
+            LogService.log(.userAction, event: "diagnostics_exported")
+        }
     }
 
     var body: some View {
@@ -372,6 +380,22 @@ struct SettingsView: View {
                     .disabled(!settings.showFloatingWindow)
                     .opacity(settings.showFloatingWindow ? 1.0 : 0.4)
                 }
+            }
+
+            settingsSection(L10n.tr("Diagnostics"), textColor: theme.textMuted) {
+                Button {
+                    exportDiagnostics()
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.badge.arrow.up").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
+                        Text(L10n.tr("Export Diagnostics")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                        Spacer()
+                        Image(systemName: "square.and.arrow.up").font(.system(size: 11)).foregroundColor(theme.textMuted)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L10n.tr("Export Diagnostics"))
             }
 
         }

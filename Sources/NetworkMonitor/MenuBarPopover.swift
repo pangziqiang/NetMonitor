@@ -12,7 +12,13 @@ struct MenuBarPopover: View {
     @Environment(\.colorScheme) var colorScheme
     @State private var uploadShowSession = false
     @State private var downloadShowSession = false
-    @State private var processSortByCPU = true
+    enum ProcessSortMode: String, CaseIterable {
+        case cpuPerCore = "By CPU"
+        case cpuTotal = "By CPU Total"
+        case memory = "By Memory"
+        case network = "By Network"
+    }
+    @State private var processSortMode: ProcessSortMode = .cpuPerCore
 
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
 
@@ -49,14 +55,10 @@ struct MenuBarPopover: View {
             }
         )
         .onAppear {
-            system.processMonitor.maxProcesses = settings.menuTopProcessesCount
             system.processMonitor.isActive = true
         }
         .onDisappear {
             system.processMonitor.isActive = false
-        }
-        .onChange(of: settings.menuTopProcessesCount) { _, newCount in
-            system.processMonitor.maxProcesses = newCount
         }
         .onChange(of: settings.menuShowTopProcesses) { _, show in
             if !show { system.processMonitor.isActive = false }
@@ -340,19 +342,44 @@ struct MenuBarPopover: View {
 
     // MARK: - Top Processes
 
+    private var sortedProcesses: [ProcessSnapshot] {
+        let count = settings.menuTopProcessesCount
+        switch processSortMode {
+        case .cpuPerCore: return Array(system.processMonitor.topByCPU.prefix(count))
+        case .cpuTotal: return Array(system.processMonitor.topByCPUTotal.prefix(count))
+        case .memory: return Array(system.processMonitor.topByMemory.prefix(count))
+        case .network: return Array(system.processMonitor.topByNetwork.prefix(count))
+        }
+    }
+
     private var topProcessesSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Divider().opacity(0.2).padding(.horizontal, Spacing.md)
 
             HStack(spacing: 8) {
-                Image(systemName: "app.badge").font(.system(size: 11)).foregroundColor(theme.textMuted)
-                Text(L10n.tr("Top Processes")).font(.system(size: 11)).foregroundColor(theme.textMuted)
+                HStack(spacing: 4) {
+                    Image(systemName: "app.badge").font(.system(size: 11))
+                    Text(L10n.tr("Top Processes")).font(.system(size: 11))
+                }
+                .foregroundColor(theme.textMuted)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(theme.textMuted.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                activityMonitorButton
+
                 Spacer()
                 processSortToggle
             }
             .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.sm)
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                appState.settingsTab = .general
+                openWindow(id: "settings")
+                NSApp.activate()
+            }
 
-            let processes = processSortByCPU ? system.processMonitor.topByCPU : system.processMonitor.topByMemory
+            let processes = sortedProcesses
             VStack(spacing: 2) {
                 ForEach(Array(processes.enumerated()), id: \.element.pid) { _, snap in
                     processRow(snap)
@@ -366,23 +393,58 @@ struct MenuBarPopover: View {
         }
     }
 
+    private var activityMonitorButton: some View {
+        Button {
+            let url = URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app")
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 11))
+                Text("活动监视器")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundColor(.downloadColor)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Color.downloadColor.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var processSortToggle: some View {
         HStack(spacing: 0) {
             Button(L10n.tr("By CPU")) {
-                withAnimation(.easeInOut(duration: 0.15)) { processSortByCPU = true }
+                withAnimation(.easeInOut(duration: 0.15)) { processSortMode = .cpuPerCore }
             }
             .font(.system(size: 9, weight: .medium))
             .padding(.horizontal, 5).padding(.vertical, 2)
-            .background(processSortByCPU ? Color.downloadColor.opacity(0.15) : Color.clear)
-            .foregroundColor(processSortByCPU ? .downloadColor : theme.textMuted.opacity(0.6))
+            .background(processSortMode == .cpuPerCore ? Color.downloadColor.opacity(0.15) : Color.clear)
+            .foregroundColor(processSortMode == .cpuPerCore ? .downloadColor : theme.textMuted.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            Button("CPU总") {
+                withAnimation(.easeInOut(duration: 0.15)) { processSortMode = .cpuTotal }
+            }
+            .font(.system(size: 9, weight: .medium))
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(processSortMode == .cpuTotal ? Color.downloadColor.opacity(0.15) : Color.clear)
+            .foregroundColor(processSortMode == .cpuTotal ? .downloadColor : theme.textMuted.opacity(0.6))
             .clipShape(RoundedRectangle(cornerRadius: 3))
             Button(L10n.tr("By Memory")) {
-                withAnimation(.easeInOut(duration: 0.15)) { processSortByCPU = false }
+                withAnimation(.easeInOut(duration: 0.15)) { processSortMode = .memory }
             }
             .font(.system(size: 9, weight: .medium))
             .padding(.horizontal, 5).padding(.vertical, 2)
-            .background(!processSortByCPU ? Color.downloadColor.opacity(0.15) : Color.clear)
-            .foregroundColor(!processSortByCPU ? .downloadColor : theme.textMuted.opacity(0.6))
+            .background(processSortMode == .memory ? Color.downloadColor.opacity(0.15) : Color.clear)
+            .foregroundColor(processSortMode == .memory ? .downloadColor : theme.textMuted.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            Button("按网络") {
+                withAnimation(.easeInOut(duration: 0.15)) { processSortMode = .network }
+            }
+            .font(.system(size: 9, weight: .medium))
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(processSortMode == .network ? Color.downloadColor.opacity(0.15) : Color.clear)
+            .foregroundColor(processSortMode == .network ? .downloadColor : theme.textMuted.opacity(0.6))
             .clipShape(RoundedRectangle(cornerRadius: 3))
         }
         .buttonStyle(.plain)
@@ -409,18 +471,40 @@ struct MenuBarPopover: View {
 
             Spacer()
 
-            Text(String(format: "%.1f%%", snap.cpuPercent))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(cpuPercentColor(snap.cpuPercent))
+            if processSortMode == .network {
+                Text(formatNetworkSpeed(snap.downloadBytes, isDownload: true))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.downloadColor)
+                    .frame(width: 72, alignment: .trailing)
+                Text(formatNetworkSpeed(snap.uploadBytes, isDownload: false))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.uploadColor)
+                    .frame(width: 72, alignment: .trailing)
+            } else {
+                let cpuValue = processSortMode == .cpuTotal
+                    ? snap.cpuPercent / Double(system.processMonitor.processorCount)
+                    : snap.cpuPercent
+                Text(String(format: "%.1f%%", cpuValue))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(cpuPercentColor(cpuValue))
 
-            Text(formatBytes(snap.rssBytes, dataUnit: settings.dataUnit))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.memoryColor)
-                .frame(width: 64, alignment: .trailing)
+                Text(formatBytes(snap.rssBytes, dataUnit: settings.dataUnit))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(.memoryColor)
+                    .frame(width: 64, alignment: .trailing)
+            }
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(theme.appBg.opacity(0.3))
         .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func formatNetworkSpeed(_ bytesPerSec: Double, isDownload: Bool) -> String {
+        let prefix = isDownload ? "↓" : "↑"
+        if bytesPerSec < 0 { return "\(prefix)0 KB/s" }
+        let kb = bytesPerSec / 1024.0
+        if kb < 1024.0 { return "\(prefix)\(String(format: "%.1f", kb)) KB/s" }
+        return "\(prefix)\(String(format: "%.1f", kb / 1024.0)) MB/s"
     }
 
     private func selfProcessRow(_ snap: ProcessSnapshot) -> some View {
@@ -442,14 +526,28 @@ struct MenuBarPopover: View {
 
             Spacer()
 
-            Text(String(format: "%.1f%%", snap.cpuPercent))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(cpuPercentColor(snap.cpuPercent))
+            if processSortMode == .network {
+                Text(formatNetworkSpeed(snap.downloadBytes, isDownload: true))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.downloadColor)
+                    .frame(width: 72, alignment: .trailing)
+                Text(formatNetworkSpeed(snap.uploadBytes, isDownload: false))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.uploadColor)
+                    .frame(width: 72, alignment: .trailing)
+            } else {
+                let cpuValue = processSortMode == .cpuTotal
+                    ? snap.cpuPercent / Double(system.processMonitor.processorCount)
+                    : snap.cpuPercent
+                Text(String(format: "%.1f%%", cpuValue))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(cpuPercentColor(cpuValue))
 
-            Text(formatBytes(snap.rssBytes, dataUnit: settings.dataUnit))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.memoryColor)
-                .frame(width: 64, alignment: .trailing)
+                Text(formatBytes(snap.rssBytes, dataUnit: settings.dataUnit))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(.memoryColor)
+                    .frame(width: 64, alignment: .trailing)
+            }
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(Color.downloadColor.opacity(0.06))

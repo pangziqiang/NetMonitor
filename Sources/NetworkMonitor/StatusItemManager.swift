@@ -2,6 +2,7 @@ import NetworkMonitorCore
 import SwiftUI
 import AppKit
 import Combine
+import os
 
 class MenuBarPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -53,7 +54,10 @@ class StatusItemManager: NSObject {
         hostingView = nil
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        guard let button = statusItem?.button else { return }
+        guard let button = statusItem?.button else {
+            os_log(.error, log: OSLog(subsystem: AppConstants.logSubsystem, category: "StatusItem"), "Failed to get status item button")
+            return
+        }
 
         let swiftUIView = StatusBarView(engine: engine, system: system, settings: settings)
         hostingView = NSHostingView(rootView: AnyView(swiftUIView))
@@ -110,9 +114,9 @@ class StatusItemManager: NSObject {
             }
 
         // Close panel when clicking outside (unless pinned)
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak panel, weak self] _ in
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak panel] _ in
             guard let panel, panel.isVisible else { return }
-            guard let self, !PopoverManager.shared.isPinned else { return }
+            guard !PopoverManager.shared.isPinned else { return }
             panel.orderOut(nil)
         }
     }

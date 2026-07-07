@@ -153,5 +153,7 @@ public enum L10n {
         "By Memory": "按内存",
         "Show Top Processes": "显示活跃进程",
         "Process Count": "显示数量",
+        "Diagnostics": "诊断",
+        "Export Diagnostics": "导出诊断",
     ]
 }

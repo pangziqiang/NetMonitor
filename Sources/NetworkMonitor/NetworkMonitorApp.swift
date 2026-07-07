@@ -18,6 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private static let log = OSLog(subsystem: AppConstants.logSubsystem, category: "SettingsWindow")
 
     func applicationWillTerminate(_ notification: Notification) {
+        LogService.log(.lifecycle, event: "app_terminating")
         statusItemManager?.cleanup()
         engine.stop()
         system.stop()
@@ -29,6 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        LogService.log(.lifecycle, event: "app_launched", detail: "os=\(ProcessInfo.processInfo.operatingSystemVersionString)")
         engine.start()
         system.start()
         let mgr = StatusItemManager(engine: engine, system: system, appState: appState, settings: settings)
@@ -101,9 +103,8 @@ struct NetworkMonitorApp: App {
                 .frame(width: 400)
                 .background(SettingsWindowAccessor { appDelegate.setSettingsWindow($0) })
                 .onChange(of: appDelegate.appState.historySeconds) { _, n in
-                    let c = max(30, min(600, n))
-                    appDelegate.engine.historyMax = c
-                    appDelegate.system.historyMax = c
+                    appDelegate.engine.historyMax = n
+                    appDelegate.system.historyMax = n
                 }
                 .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openSettingsNotification)) { _ in
                     openWindow(id: "settings")

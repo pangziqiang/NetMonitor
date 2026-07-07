@@ -47,7 +47,12 @@ public class AppSettings: ObservableObject {
         didSet { if !isLoadingDefaults { userDefaults.set(menuShowTopProcesses, forKey: "menuShowTopProcesses") } }
     }
     @Published public var menuTopProcessesCount: Int = 8 {
-        didSet { if !isLoadingDefaults { userDefaults.set(menuTopProcessesCount, forKey: "menuTopProcessesCount") } }
+        didSet {
+            if !isLoadingDefaults {
+                userDefaults.set(menuTopProcessesCount, forKey: "menuTopProcessesCount")
+                LogService.log(.userAction, event: "process_count_changed", detail: "\(menuTopProcessesCount)")
+            }
+        }
     }
     @Published public var menuBarOrderRaw: String = "speed,dailyTraffic,cpu,gpu,memory" {
         didSet { if !isLoadingDefaults { userDefaults.set(menuBarOrderRaw, forKey: "menuBarOrder") } }
@@ -89,13 +94,23 @@ public class AppSettings: ObservableObject {
     // MARK: - App Behavior
 
     @Published public var showDockIcon: Bool = false {
-        didSet { if !isLoadingDefaults { userDefaults.set(showDockIcon, forKey: "showDockIcon") } }
+        didSet {
+            if !isLoadingDefaults {
+                userDefaults.set(showDockIcon, forKey: "showDockIcon")
+                LogService.log(.userAction, event: "dock_icon_changed", detail: "\(showDockIcon)")
+            }
+        }
     }
 
     // MARK: - Floating Window
 
     @Published public var showFloatingWindow: Bool = false {
-        didSet { if !isLoadingDefaults { userDefaults.set(showFloatingWindow, forKey: "showFloatingWindow") } }
+        didSet {
+            if !isLoadingDefaults {
+                userDefaults.set(showFloatingWindow, forKey: "showFloatingWindow")
+                LogService.log(.userAction, event: "floating_window_changed", detail: "\(showFloatingWindow)")
+            }
+        }
     }
     @Published public var floatShowSpeed: Bool = true {
         didSet { if !isLoadingDefaults { userDefaults.set(floatShowSpeed, forKey: "floatShowSpeed") } }
