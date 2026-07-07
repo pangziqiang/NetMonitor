@@ -109,18 +109,9 @@ struct CardModifier: ViewModifier {
         switch variant {
         case .glass:
             content
-                .background {
-                    if isDark {
-                        ZStack {
-                            colors.cardBg
-                            Color.clear.background(.ultraThinMaterial)
-                        }
-                    } else { colors.cardBg }
-                }
+                .background(colors.cardBg)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                .overlay(topHighlight(isDark), alignment: .top)
-                .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(isDark ? Color.white.opacity(0.06) : colors.cardBorder, lineWidth: 1))
-                .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
+                .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(colors.cardBorder, lineWidth: 1))
         case .solid:
             content
                 .background(colors.cardBg)
@@ -132,47 +123,18 @@ struct CardModifier: ViewModifier {
                 .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(isDark ? Color.white.opacity(0.06) : colors.cardBorder, lineWidth: 1))
         case .elevated:
             content
-                .background {
-                    if isDark {
-                        ZStack {
-                            colors.cardBg
-                            Color.clear.background(.ultraThinMaterial)
-                        }
-                    } else { colors.cardBg }
-                }
+                .background(colors.cardBg)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                .overlay(topHighlight(isDark), alignment: .top)
-                .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(isDark ? Color.white.opacity(0.06) : colors.cardBorder, lineWidth: 1))
-                .shadow(color: .black.opacity(0.4), radius: 24, x: 0, y: 16)
+                .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(colors.cardBorder, lineWidth: 1))
         case let .tone(color):
             content
-                .background {
-                    if isDark {
-                        ZStack {
-                            colors.cardBg
-                            Color.clear.background(.ultraThinMaterial)
-                        }
-                    } else { colors.cardBg }
-                }
-                .overlay(RoundedRectangle(cornerRadius: cornerRadius).fill(LinearGradient(colors: [color.opacity(0.10), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                .background(colors.cardBg)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                .overlay(topHighlight(isDark), alignment: .top)
                 .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(color.opacity(isDark ? 0.25 : 0.15), lineWidth: 1))
-                .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
-                .shadow(color: color.opacity(isDark ? 0.15 : 0.08), radius: 20, x: 0, y: 10)
         case .ghost:
             content
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
                 .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(isDark ? Color.white.opacity(0.03) : Color.black.opacity(0.05), lineWidth: 1))
-        }
-    }
-
-    private func topHighlight(_ isDark: Bool) -> some View {
-        Group {
-            if isDark {
-                LinearGradient(colors: [.clear, .white.opacity(0.08), .clear], startPoint: .leading, endPoint: .trailing)
-                    .frame(height: 1)
-            }
         }
     }
 }
@@ -246,28 +208,6 @@ struct GlassButtonStyle: ButtonStyle {
     }
 }
 
-struct AmbientGlowModifier: ViewModifier {
-    @Environment(\.colorScheme) var colorScheme
-
-    func body(content: Content) -> some View {
-        let isDark = colorScheme == .dark
-        return content
-            .background(
-                ZStack {
-                    if isDark {
-                        Circle().fill(Color.downloadColor.opacity(0.07)).frame(width: 500, height: 500)
-                            .blur(radius: 120).offset(x: -200, y: -100)
-                        Circle().fill(Color.uploadColor.opacity(0.05)).frame(width: 500, height: 500)
-                            .blur(radius: 120).offset(x: 200, y: 100)
-                        Circle().fill(Color.cpuColor.opacity(0.04)).frame(width: 400, height: 400)
-                            .blur(radius: 100).offset(x: 0, y: 100)
-                    }
-                }
-                    .allowsHitTesting(false)
-            )
-    }
-}
-
 // MARK: - Holographic Elements
 
 enum Holographic {
@@ -288,10 +228,6 @@ extension View {
 extension View {
     func card(_ variant: CardVariant = .glass) -> some View {
         modifier(CardModifier(variant: variant))
-    }
-
-    func ambientGlow() -> some View {
-        modifier(AmbientGlowModifier())
     }
 }
 

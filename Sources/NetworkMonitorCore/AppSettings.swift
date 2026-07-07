@@ -1,6 +1,12 @@
 import Foundation
 import Combine
 
+public enum FloatDoubleClickAction: String, CaseIterable, Identifiable {
+    case settings = "settings"
+    case trafficStats = "trafficStats"
+    public var id: String { rawValue }
+}
+
 public class AppSettings: ObservableObject {
     public static let shared = AppSettings()
 
@@ -127,6 +133,14 @@ public class AppSettings: ObservableObject {
     @Published public var floatShowMemory: Bool = true {
         didSet { if !isLoadingDefaults { userDefaults.set(floatShowMemory, forKey: "floatShowMemory") } }
     }
+    @Published public var floatDoubleClickActionRaw: String = FloatDoubleClickAction.settings.rawValue {
+        didSet { if !isLoadingDefaults { userDefaults.set(floatDoubleClickActionRaw, forKey: "floatDoubleClickAction") } }
+    }
+
+    public var floatDoubleClickAction: FloatDoubleClickAction {
+        get { FloatDoubleClickAction(rawValue: floatDoubleClickActionRaw) ?? .settings }
+        set { floatDoubleClickActionRaw = newValue.rawValue }
+    }
 
     // MARK: - Initialization
 
@@ -161,7 +175,8 @@ public class AppSettings: ObservableObject {
             "menuShowMemory": false,
             "menuShowTopProcesses": true,
             "menuTopProcessesCount": 8,
-            "menuBarOrder": "speed,dailyTraffic,cpu,gpu,memory"
+            "menuBarOrder": "speed,dailyTraffic,cpu,gpu,memory",
+            "floatDoubleClickAction": FloatDoubleClickAction.settings.rawValue
         ])
     }
 
@@ -200,5 +215,11 @@ public class AppSettings: ObservableObject {
         floatShowCPU = userDefaults.bool(forKey: "floatShowCPU")
         floatShowGPU = userDefaults.bool(forKey: "floatShowGPU")
         floatShowMemory = userDefaults.bool(forKey: "floatShowMemory")
+        if let stored = userDefaults.string(forKey: "floatDoubleClickAction"),
+           FloatDoubleClickAction(rawValue: stored) != nil {
+            floatDoubleClickActionRaw = stored
+        } else {
+            floatDoubleClickActionRaw = FloatDoubleClickAction.settings.rawValue
+        }
     }
 }

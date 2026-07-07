@@ -12,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var statusItemManager: StatusItemManager?
     var floatingWindowManager: FloatingWindowManager?
     static let openSettingsNotification = Notification.Name("OpenSettingsWindow")
+    static let openTrafficStatsNotification = Notification.Name("OpenTrafficStatsWindow")
     private var settingsWindow: NSWindow?
     private var settingsWindowObserver: NSObjectProtocol?
     private static let settingsWindowLevel = NSWindow.Level(rawValue: 102)
@@ -38,8 +39,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItemManager = mgr
         floatingWindowManager = FloatingWindowManager(engine: engine, system: system, settings: settings,
             onDoubleClick: { [weak self] in
-                self?.appState.settingsTab = .general
-                NotificationCenter.default.post(name: Self.openSettingsNotification, object: nil)
+                guard let self else { return }
+                if self.settings.floatDoubleClickAction == .trafficStats {
+                    NotificationCenter.default.post(name: Self.openTrafficStatsNotification, object: nil)
+                } else {
+                    self.appState.settingsTab = .general
+                    NotificationCenter.default.post(name: Self.openSettingsNotification, object: nil)
+                }
             }) { [weak self] in
             self?.appState.settingsTab = .general
             NotificationCenter.default.post(name: Self.openSettingsNotification, object: nil)
@@ -115,6 +121,20 @@ struct NetworkMonitorApp: App {
         .defaultSize(width: 400, height: 600)
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
+
+        Window(L10n.tr("Traffic Stats"), id: "trafficStats") {
+            HistoryView()
+                .environmentObject(appDelegate.appState)
+                .environmentObject(appDelegate.settings)
+                .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openTrafficStatsNotification)) { _ in
+                    openWindow(id: "trafficStats")
+                    NSApp.activate()
+                }
+        }
+        .defaultSize(width: 1000, height: 900)
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
+
         .commands {
             CommandMenu(L10n.tr("NetMonitor")) {
                 Button(L10n.tr("Toggle Popover")) { appDelegate.statusItemManager?.togglePopover(nil) }
@@ -141,6 +161,8 @@ struct NetworkMonitorApp: App {
                 Divider()
                 Button(L10n.tr("Settings…")) { openWindow(id: "settings"); NSApp.activate() }
                     .keyboardShortcut(",", modifiers: .command)
+                Button(L10n.tr("Traffic Stats…")) { openWindow(id: "trafficStats"); NSApp.activate() }
+                    .keyboardShortcut("t", modifiers: .command)
             }
             CommandGroup(after: .appSettings) {}
             CommandGroup(replacing: .undoRedo) {

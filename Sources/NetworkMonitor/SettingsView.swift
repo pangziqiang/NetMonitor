@@ -30,19 +30,16 @@ struct ThinScrollConfig: NSViewRepresentable {
 
 enum SettingsTab: String, CaseIterable {
     case general
-    case history
     case permissions
     var displayName: String {
         switch self {
         case .general: return L10n.tr("General")
-        case .history: return L10n.tr("Traffic Statistics")
         case .permissions: return L10n.tr("Permissions")
         }
     }
     var icon: String {
         switch self {
         case .general: return "gearshape.fill"
-        case .history: return "chart.bar.fill"
         case .permissions: return "lock.shield.fill"
         }
     }
@@ -92,14 +89,6 @@ struct SettingsView: View {
                 .padding(.horizontal, 20).padding(.bottom, 20)
                 .padding(.top, Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-            } else if appState.settingsTab == .history {
-                VStack(alignment: .leading, spacing: 0) {
-                    HistoryView()
-                }
-                .clipped()
-                .padding(.horizontal, 20).padding(.bottom, 20)
-                .padding(.top, Spacing.md)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     PermissionsView()
@@ -108,13 +97,6 @@ struct SettingsView: View {
                 .padding(.top, Spacing.md)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-        }
-        .background {
-            ZStack {
-                theme.appBg
-                Color.clear.background(.regularMaterial)
-            }
-            .ignoresSafeArea()
         }
     }
 
@@ -381,6 +363,18 @@ struct SettingsView: View {
                     .disabled(!settings.showFloatingWindow)
                     .opacity(settings.showFloatingWindow ? 1.0 : 0.4)
                 }
+                HStack {
+                    Image(systemName: "hand.tap").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
+                    Text(L10n.tr("Double-click floating window")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                    Spacer()
+                    Picker("", selection: $settings.floatDoubleClickActionRaw) {
+                        Text(L10n.tr("Open Settings")).tag(FloatDoubleClickAction.settings.rawValue)
+                        Text(L10n.tr("Traffic Stats")).tag(FloatDoubleClickAction.trafficStats.rawValue)
+                    }
+                    .pickerStyle(.menu).frame(width: 100)
+                    .disabled(!settings.showFloatingWindow)
+                    .opacity(settings.showFloatingWindow ? 1.0 : 0.4)
+                }
             }
 
             settingsSection(L10n.tr("Diagnostics"), textColor: theme.textMuted) {
@@ -500,38 +494,57 @@ struct HistoryView: View {
     private static let cacheTTL: TimeInterval = 30
 
     var body: some View {
-        VStack(spacing: Spacing.md) {
-            // Time range switcher
-            Picker("", selection: $timeRange) {
-                ForEach(HistoryTimeRange.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            // Title + time range
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "chart.bar.fill").font(.system(size: 14))
+                    Text(L10n.tr("Traffic Stats")).font(.system(size: 16, weight: .semibold))
+                }
+                .foregroundColor(theme.textPrimary)
+                .lineLimit(1)
+                Spacer()
+                Picker("", selection: $timeRange) {
+                    ForEach(HistoryTimeRange.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
             }
-            .pickerStyle(.segmented)
 
-            // Summary cards
-            summaryCards
+            // Main content: left sidebar + right data table
+            HStack(alignment: .top, spacing: Spacing.lg) {
+                // Left sidebar
+                sidebarSummary
+                    .frame(width: 180)
+
+                // Right: data table
+                dataTable
+            }
 
             // Charts
-            if timeRange == .today {
+            VStack(spacing: Spacing.md) {
                 SpeedTrendChart(records: chartRecords, displayUnit: settings.displayUnit)
+                TrafficBarChart(records: chartRecords, dataUnit: settings.dataUnit)
             }
-            TrafficBarChart(records: chartRecords, dataUnit: settings.dataUnit)
-
-            // Data table
-            dataTable
 
             // Export button
-            Button {
-                showExportSheet = true
-            } label: {
-                HStack {
-                    Image(systemName: "square.and.arrow.up").font(.system(size: 12))
-                    Text(L10n.tr("Export Data")).font(.system(size: 12))
-                    Spacer()
+            HStack {
+                Spacer()
+                Button {
+                    showExportSheet = true
+                } label: {
+                    HStack {
+                        Image(systemName: "square.and.arrow.up").font(.system(size: 12))
+                        Text(L10n.tr("Export Data")).font(.system(size: 12))
+                    }
                 }
+                .buttonStyle(.glass(.primary))
+                .frame(width: 160)
+                .accessibilityLabel(L10n.tr("Export Data"))
+                Spacer()
             }
-            .buttonStyle(.glass(.primary))
-            .accessibilityLabel(L10n.tr("Export Data"))
         }
+        .padding(20)
         .sheet(isPresented: $showExportSheet) {
             ExportDataSheet(isPresented: $showExportSheet, theme: theme)
         }
@@ -569,6 +582,60 @@ struct HistoryView: View {
                 totalDown: d.totalDown, totalUp: d.totalUp
             )
         }
+    }
+
+    private var sidebarSummary: some View {
+        let totalD: UInt64
+        let totalU: UInt64
+        let avgD: Double
+        let avgU: Double
+
+        switch timeRange {
+        case .today:
+            totalD = hourlyData.reduce(0) { $0 + $1.totalDown }
+            totalU = hourlyData.reduce(0) { $0 + $1.totalUp }
+            avgD = hourlyData.map(\.avgDown).average
+            avgU = hourlyData.map(\.avgUp).average
+        case .week:
+            totalD = dailySummary.reduce(0) { $0 + $1.totalDown }
+            totalU = dailySummary.reduce(0) { $0 + $1.totalUp }
+            avgD = dailySummary.map(\.avgDown).average
+            avgU = dailySummary.map(\.avgUp).average
+        case .month:
+            totalD = weeklySummary.reduce(0) { $0 + $1.totalDown }
+            totalU = weeklySummary.reduce(0) { $0 + $1.totalUp }
+            avgD = weeklySummary.map(\.avgDown).average
+            avgU = weeklySummary.map(\.avgUp).average
+        }
+
+        return VStack(alignment: .leading, spacing: 0) {
+            sidebarRow(label: L10n.tr("Download"), value: formatBytes(totalD, dataUnit: settings.dataUnit), color: .downloadColor)
+            sidebarDivider
+            sidebarRow(label: L10n.tr("Upload"), value: formatBytes(totalU, dataUnit: settings.dataUnit), color: .uploadColor)
+            sidebarDivider
+            sidebarRow(label: L10n.tr("Avg Download"), value: formatSpeed(avgD, unit: settings.displayUnit), color: .downloadColor)
+            sidebarDivider
+            sidebarRow(label: L10n.tr("Avg Upload"), value: formatSpeed(avgU, unit: settings.displayUnit), color: .uploadColor)
+        }
+        .padding(12)
+        .background(theme.textMuted.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func sidebarRow(label: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundColor(theme.textMuted)
+            Text(value)
+                .font(.system(size: 18, weight: .bold, design: .monospaced))
+                .foregroundColor(color)
+        }
+        .padding(.vertical, 10)
+    }
+
+    private var sidebarDivider: some View {
+        Divider().opacity(0.15)
     }
 
     private var summaryCards: some View {
@@ -743,7 +810,7 @@ struct HistoryView: View {
                         }
                     }
                 }
-                .frame(maxHeight: 200)
+                .frame(maxHeight: 400)
             }
         }
         .card(.glass)

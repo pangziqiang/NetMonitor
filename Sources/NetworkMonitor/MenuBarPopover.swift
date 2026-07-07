@@ -34,18 +34,8 @@ struct MenuBarPopover: View {
         }
         .padding(.vertical, Spacing.sm)
         .frame(minWidth: 380, maxWidth: .infinity)
-        .background {
-            if colorScheme == .dark {
-                ZStack {
-                    theme.appBg
-                    Color.clear.background(.regularMaterial)
-                }
-            } else {
-                theme.appBg
-            }
-        }
+        .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
         .overlay(
             GeometryReader { proxy in
                 Color.clear
@@ -180,8 +170,7 @@ struct MenuBarPopover: View {
     }
 
     private func openTrafficStatistics() {
-        appState.settingsTab = .history
-        openWindow(id: "settings")
+        openWindow(id: "trafficStats")
         NSApp.activate()
     }
 
@@ -579,6 +568,11 @@ struct MenuBarPopover: View {
                 openWindow(id: "settings")
                 NSApp.activate()
             }
+            bottomActionRow(icon: "chart.bar.fill", text: L10n.tr("Traffic Stats")) {
+                openWindow(id: "trafficStats")
+                NSApp.activate()
+            }
+            Spacer(minLength: 16)
             bottomActionRow(icon: "xmark", text: L10n.tr("Exit"), destructive: true) {
                 engine.stop(); system.stop()
                 DispatchQueue.main.async { NSApplication.shared.terminate(nil) }
@@ -597,7 +591,7 @@ struct MenuBarPopover: View {
                     .font(.system(size: 12))
                     .foregroundColor(destructive ? .errorColor : theme.textSecondary)
             }
-            .frame(width: 56)
+            .frame(width: 72)
             .padding(.vertical, 8)
             .contentShape(Rectangle())
         }

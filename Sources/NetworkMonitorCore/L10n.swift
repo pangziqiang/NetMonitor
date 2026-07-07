@@ -178,5 +178,9 @@ public enum L10n {
         "Peak Upload": "峰值上传",
         "Peak Download": "峰值下载",
         "Week": "周",
+        "Traffic Stats": "流量统计",
+        "Traffic Stats…": "流量统计…",
+        "Double-click floating window": "双击浮窗",
+        "Open Settings": "打开设置",
     ]
 }
