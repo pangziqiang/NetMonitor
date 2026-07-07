@@ -113,5 +113,58 @@ NetworkMonitor/
 
 - `v1.0-snapshot` — 进程监控功能前基线
 - `stable-v1.1` — 进程监控 CPU+内存稳定版
+- `stable-v1.2-diagnostics` — 日志系统 + 进程数量即时响应 + 双击标题跳转
+
+## 数据导出功能方案（待实施）
+
+### 改动范围
+
+**数据采集层（NetworkMonitorEngine）：**
+- tick() 中追踪峰值速度：`peakDown` / `peakUp`（每3秒比较取 max）
+- flushMinute() 时写入 DB 并重置峰值
+
+**数据采集层（SystemMonitor）：**
+- tick() 中 processMonitor.tick() 后，把 topByNetwork 前3名格式化为 JSON 暂存到 DB
+- 格式：`[{"name":"Safari","down":123456,"up":7890}]`
+
+**存储层（DatabaseManager）：**
+- `traffic_minutely` 新增 3 列：`peak_down INTEGER DEFAULT 0`, `peak_up INTEGER DEFAULT 0`, `top_processes TEXT DEFAULT NULL`
+- 迁移：`ALTER TABLE ADD COLUMN`（安全，现有行填默认值）
+- 留存从 7 天 → 30 天（`MINUTELY_RETENTION_DAYS = 30`）
+- 新增范围查询：`dailyTraffic(from:to:)`, `minutelyTraffic(from:to:)`
+- 新增导出方法：`exportDailyCSV(from:to:)`, `exportMinutelyCSV(from:to:)`
+- CSV 文件头加 UTF-8 BOM (`\u{FEFF}`) 防止 Excel 中文乱码
+
+**UI 层（SettingsView）：**
+- HistoryView 底部移除「清空数据库」按钮
+- HistoryView 表格下方加「导出数据」按钮
+- 点击弹出 Sheet 配置面板：
+  - 时间范围：最近7天 / 最近30天 / 全部 / 自定义
+  - 数据类型：☑ 每日汇总 ☑ 分钟明细 ☑ 进程记录（分钟明细的子选项）
+  - 文件格式：CSV / JSON
+- 默认：最近7天 + 每日汇总 + CSV（一键导出场景）
+- 导出写入 ZIP 包（调系统 `zip` 命令，零依赖）
+- 完成后提示 +「在 Finder 中显示」按钮
+- 诊断区保留「清空流量数据」按钮（从流量统计tab移过来）
+
+**L10n：** 新增翻译：导出数据、时间范围、数据类型、文件格式等
+
+### 改动文件清单
+
+| 文件 | 改动 |
+|------|------|
+| `DatabaseManager.swift` | 加列迁移、峰值/进程暂存属性、`_insertMinutely` 改写、留存改30天、范围查询、CSV导出 |
+| `NetworkMonitorEngine.swift` | 峰值追踪 + flush 重置 |
+| `SystemMonitor.swift` | tick 后暂存进程 JSON |
+| `SettingsView.swift` | HistoryView 导出按钮 + Sheet 面板 + 清空按钮移位 |
+| `L10n.swift` | 新增翻译 |
+| 测试 | 迁移测试、导出测试 |
+
+### 风险点
+
+- ALTER TABLE 迁移失败 → 用 `PRAGMA table_info` 检查列存在性再加
+- 进程快照 3s 写内存 → 只更新变量，flush 时才写 DB
+- CSV 中文乱码 → 文件头加 BOM
+- ZIP 打包 → 用 `Process` 调 `/usr/bin/zip`，需处理失败回退
 
 
