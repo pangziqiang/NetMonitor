@@ -43,50 +43,63 @@ public class ProcessMonitor: ObservableObject {
         processorCount = ProcessInfo.processInfo.processorCount
     }
 
+    private let tickQueue = DispatchQueue(label: "com.opencode.network-monitor.process", qos: .utility)
+
     public func tick() {
         guard isActive else { return }
 
-        let now = Date()
-        var snapshots: [ProcessSnapshot] = []
-        var currentTicks: [Int32: UInt64] = [:]
+        tickQueue.async { [weak self] in
+            guard let self else { return }
 
-        let allPids = enumeratePIDs()
-        var selfSnapshot: ProcessSnapshot?
-        for pid in allPids {
-            guard let info = taskInfo(pid) else { continue }
+            let now = Date()
+            var snapshots: [ProcessSnapshot] = []
+            var currentTicks: [Int32: UInt64] = [:]
 
-            let totalTicks = info.pti_total_user + info.pti_total_system
-            currentTicks[pid] = totalTicks
+            let allPids = self.enumeratePIDs()
+            var selfSnapshot: ProcessSnapshot?
+            for pid in allPids {
+                guard let info = self.taskInfo(pid) else { continue }
 
-            let rss = info.pti_resident_size
+                let totalTicks = info.pti_total_user + info.pti_total_system
+                currentTicks[pid] = totalTicks
 
-            var cpuPercent: Double = 0
-            if hasBaseline, let prev = lastTicks[pid], totalTicks > prev {
-                let tickDelta = Double(totalTicks - prev) / 1_000_000_000.0
-                let elapsed = now.timeIntervalSince(lastSampleTime)
-                cpuPercent = elapsed > 0 ? (tickDelta / elapsed) * 100.0 : 0
+                let rss = info.pti_resident_size
+
+                var cpuPercent: Double = 0
+                if self.hasBaseline, let prev = self.lastTicks[pid], totalTicks > prev {
+                    let tickDelta = Double(totalTicks - prev) / 1_000_000_000.0
+                    let elapsed = now.timeIntervalSince(self.lastSampleTime)
+                    cpuPercent = elapsed > 0 ? (tickDelta / elapsed) * 100.0 : 0
+                }
+
+                let name = processName(pid)
+                let snap = ProcessSnapshot(pid: pid, name: name, cpuPercent: cpuPercent, rssBytes: rss)
+
+                if pid == self.selfPID {
+                    selfSnapshot = snap
+                } else {
+                    snapshots.append(snap)
+                }
             }
 
-            let name = processName(pid)
-            let snap = ProcessSnapshot(pid: pid, name: name, cpuPercent: cpuPercent, rssBytes: rss)
+            self.lastTicks = currentTicks
+            self.lastSampleTime = now
+            self.hasBaseline = true
 
-            if pid == selfPID {
-                selfSnapshot = snap
-            } else {
-                snapshots.append(snap)
+            let byCPU = Array(snapshots.sorted { $0.cpuPercent > $1.cpuPercent }.prefix(20))
+            let byMemory = Array(snapshots.sorted { $0.rssBytes > $1.rssBytes }.prefix(20))
+            let byCPUTotal = Array(snapshots.sorted { ($0.cpuPercent / Double(self.processorCount)) > ($1.cpuPercent / Double(self.processorCount)) }.prefix(20))
+            let selfSnap = selfSnapshot
+
+            DispatchQueue.main.async {
+                self.topByCPU = byCPU
+                self.topByMemory = byMemory
+                self.topByCPUTotal = byCPUTotal
+                self.selfInfo = selfSnap
             }
+
+            self.tickNetwork()
         }
-
-        lastTicks = currentTicks
-        lastSampleTime = now
-        hasBaseline = true
-
-        topByCPU = Array(snapshots.sorted { $0.cpuPercent > $1.cpuPercent }.prefix(20))
-        topByMemory = Array(snapshots.sorted { $0.rssBytes > $1.rssBytes }.prefix(20))
-        topByCPUTotal = Array(snapshots.sorted { ($0.cpuPercent / Double(processorCount)) > ($1.cpuPercent / Double(processorCount)) }.prefix(20))
-        selfInfo = selfSnapshot
-
-        tickNetwork()
     }
 
     private func tickNetwork() {
@@ -139,11 +152,26 @@ public class ProcessMonitor: ObservableObject {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
 
+        let semaphore = DispatchSemaphore(value: 0)
+        var timedOut = false
+
         do {
+            let timeoutWork = DispatchWorkItem {
+                timedOut = true
+                task.terminate()
+                semaphore.signal()
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: timeoutWork)
             try task.run()
-            task.waitUntilExit()
+            task.terminationHandler = { _ in semaphore.signal() }
         } catch {
             LogService.error("nettop_launch_failed", detail: error.localizedDescription)
+            return nil
+        }
+
+        semaphore.wait()
+        if timedOut {
+            LogService.error("nettop_timeout", detail: "nettop did not complete within 10s")
             return nil
         }
 

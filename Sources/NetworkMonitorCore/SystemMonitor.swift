@@ -283,14 +283,22 @@ public class SystemMonitor: ObservableObject {
                 if self.memoryHistory.count > self.historyMax { self.memoryHistory.removeFirst() }
 
                 // Temperature — already read on background thread
-                self.cpuTemperatureHistory.append(atm.cpu ?? self.cpuTemperatureHistory.last ?? 0)
+                self.cpuTemperatureHistory.append(atm.cpu ?? self.cpuTemperatureHistory.last ?? Double.nan)
                 if self.cpuTemperatureHistory.count > self.historyMax { self.cpuTemperatureHistory.removeFirst() }
-                self.gpuTemperatureHistory.append(atm.gpu ?? self.gpuTemperatureHistory.last ?? 0)
+                self.gpuTemperatureHistory.append(atm.gpu ?? self.gpuTemperatureHistory.last ?? Double.nan)
                 if self.gpuTemperatureHistory.count > self.historyMax { self.gpuTemperatureHistory.removeFirst() }
-                self.memoryTemperatureHistory.append(atm.mem ?? self.memoryTemperatureHistory.last ?? 0)
+                self.memoryTemperatureHistory.append(atm.mem ?? self.memoryTemperatureHistory.last ?? Double.nan)
                 if self.memoryTemperatureHistory.count > self.historyMax { self.memoryTemperatureHistory.removeFirst() }
 
                 self.processMonitor.tick()
+
+                let topNet = self.processMonitor.topByNetwork.prefix(3)
+                if !topNet.isEmpty {
+                    let arr = topNet.map { ["name": $0.name, "down": Int64($0.downloadBytes), "up": Int64($0.uploadBytes)] as [String: Any] }
+                    if let data = try? JSONSerialization.data(withJSONObject: arr), let json = String(data: data, encoding: .utf8) {
+                        DatabaseManager.shared?.updateProcesses(json)
+                    }
+                }
             }
         }
     }

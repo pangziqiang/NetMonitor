@@ -58,34 +58,7 @@ extension Color {
 
 // MARK: - Environment Key
 
-private struct ThemeColorsKey: EnvironmentKey {
-    static let defaultValue = ThemeColors.dark
-}
-
-extension EnvironmentValues {
-    var themeColors: ThemeColors {
-        get { self[ThemeColorsKey.self] }
-        set { self[ThemeColorsKey.self] = newValue }
-    }
-}
-
 // MARK: - View Extension for Adaptive Colors
-
-extension View {
-    func themeColor(_ keyPath: KeyPath<ThemeColors, Color>) -> some View {
-        modifier(ThemeColorModifier(keyPath: keyPath))
-    }
-}
-
-struct ThemeColorModifier: ViewModifier {
-    @Environment(\.colorScheme) var colorScheme
-    let keyPath: KeyPath<ThemeColors, Color>
-
-    func body(content: Content) -> some View {
-        let colors = colorScheme == .dark ? ThemeColors.dark : ThemeColors.light
-        content.foregroundStyle(colors[keyPath: keyPath])
-    }
-}
 
 // MARK: - Spacing Tokens
 
@@ -297,14 +270,6 @@ struct AmbientGlowModifier: ViewModifier {
 
 // MARK: - Holographic Elements
 
-struct HolographicDivider: View {
-    var body: some View {
-        LinearGradient(colors: [Color.downloadColor.opacity(0.6), Color.uploadColor.opacity(0.6), Color.gpuColor.opacity(0.6), Color.memoryColor.opacity(0.6)],
-                       startPoint: .leading, endPoint: .trailing)
-            .frame(height: 1)
-    }
-}
-
 enum Holographic {
     static let gradient = LinearGradient(
         colors: [Color.downloadColor, Color.uploadColor, Color.gpuColor, Color.memoryColor],
@@ -325,10 +290,6 @@ extension View {
         modifier(CardModifier(variant: variant))
     }
 
-    func themedBackground(_ keyPath: KeyPath<ThemeColors, Color>) -> some View {
-        modifier(ThemedBackgroundModifier(keyPath: keyPath))
-    }
-
     func ambientGlow() -> some View {
         modifier(AmbientGlowModifier())
     }
@@ -337,24 +298,5 @@ extension View {
 extension ButtonStyle where Self == GlassButtonStyle {
     static func glass(_ variant: ButtonVariant) -> GlassButtonStyle {
         GlassButtonStyle(variant: variant)
-    }
-}
-
-struct ThemedBackgroundModifier: ViewModifier {
-    @Environment(\.colorScheme) var colorScheme
-    let keyPath: KeyPath<ThemeColors, Color>
-
-    func body(content: Content) -> some View {
-        let colors = colorScheme == .dark ? ThemeColors.dark : ThemeColors.light
-        if colorScheme == .dark {
-            content.background {
-                ZStack {
-                    colors[keyPath: keyPath]
-                    Color.clear.background(.ultraThinMaterial)
-                }
-            }
-        } else {
-            content.background(colors[keyPath: keyPath])
-        }
     }
 }

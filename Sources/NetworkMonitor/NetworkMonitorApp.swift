@@ -40,7 +40,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             onDoubleClick: { [weak self] in
                 self?.appState.settingsTab = .general
                 NotificationCenter.default.post(name: Self.openSettingsNotification, object: nil)
-            }) {
+            }) { [weak self] in
+            self?.appState.settingsTab = .general
             NotificationCenter.default.post(name: Self.openSettingsNotification, object: nil)
         }
         floatingWindowManager?.update()

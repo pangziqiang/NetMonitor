@@ -3,7 +3,7 @@ import SQLite3
 import os
 
 private let log = OSLog(subsystem: AppConstants.logSubsystem, category: "db")
-private let MINUTELY_RETENTION_DAYS = 7
+private let MINUTELY_RETENTION_DAYS = 30
 private let SECONDS_PER_DAY: TimeInterval = 86400
 private let FLUSH_INTERVAL_SECONDS: TimeInterval = 60
 
@@ -43,9 +43,15 @@ public class DatabaseManager {
     private var minuteAccumDown: UInt64 = 0
     private var minuteAccumUp: UInt64 = 0
     private var lastMinuteFlush = Date()
+    private var lastHourAggregated: Int = -1
     private var flushTimer: Timer?
     private var flushCount = 0
     private let accumLock = NSLock()
+
+    private var pendingPeakDown: Double = 0
+    private var pendingPeakUp: Double = 0
+    private var pendingProcesses: String? = nil
+    private let peakLock = NSLock()
 
     private init() throws {
         guard let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
@@ -121,6 +127,75 @@ public class DatabaseManager {
             )
         """)
         try exec("CREATE INDEX IF NOT EXISTS idx_events_ts ON app_events(timestamp)")
+        try exec("""
+            CREATE TABLE IF NOT EXISTS traffic_hourly (
+                hour TEXT NOT NULL PRIMARY KEY,
+                avg_down REAL NOT NULL,
+                avg_up REAL NOT NULL,
+                peak_down INTEGER NOT NULL,
+                peak_up INTEGER NOT NULL,
+                total_down INTEGER NOT NULL,
+                total_up INTEGER NOT NULL
+            )
+        """)
+        try migrateMinutelyColumns()
+        try migrateHourlyPeakTimeColumns()
+        try backfillHourlyData()
+    }
+
+    private func migrateHourlyPeakTimeColumns() throws {
+        guard let db else { return }
+        var existing: Set<String> = []
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "PRAGMA table_info(traffic_hourly)", -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let name = sqlite3_column_text(stmt, 1) {
+                    existing.insert(String(cString: name))
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+        if !existing.contains("peak_down_time") { try exec("ALTER TABLE traffic_hourly ADD COLUMN peak_down_time TEXT DEFAULT NULL") }
+        if !existing.contains("peak_up_time") { try exec("ALTER TABLE traffic_hourly ADD COLUMN peak_up_time TEXT DEFAULT NULL") }
+    }
+
+    private func backfillHourlyData() throws {
+        guard let db else { return }
+        var stmt: OpaquePointer?
+        let checkSql = "SELECT COUNT(*) FROM traffic_hourly"
+        guard sqlite3_prepare_v2(db, checkSql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW, sqlite3_column_int64(stmt, 0) == 0 else { return }
+        sqlite3_finalize(stmt)
+        stmt = nil
+
+        let sql = """
+            INSERT OR IGNORE INTO traffic_hourly (hour, avg_down, avg_up, peak_down, peak_up, total_down, total_up)
+            SELECT SUBSTR(timestamp, 1, 13) || ':00:00.000Z' as hour,
+                   AVG(bytes_down), AVG(bytes_up),
+                   MAX(peak_down), MAX(peak_up),
+                   SUM(bytes_down), SUM(bytes_up)
+            FROM traffic_minutely
+            GROUP BY hour
+        """
+        try exec(sql)
+    }
+
+    private func migrateMinutelyColumns() throws {
+        guard let db else { return }
+        var existing: Set<String> = []
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "PRAGMA table_info(traffic_minutely)", -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let name = sqlite3_column_text(stmt, 1) {
+                    existing.insert(String(cString: name))
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+        if !existing.contains("peak_down") { try exec("ALTER TABLE traffic_minutely ADD COLUMN peak_down INTEGER DEFAULT 0") }
+        if !existing.contains("peak_up") { try exec("ALTER TABLE traffic_minutely ADD COLUMN peak_up INTEGER DEFAULT 0") }
+        if !existing.contains("top_processes") { try exec("ALTER TABLE traffic_minutely ADD COLUMN top_processes TEXT DEFAULT NULL") }
     }
 
     private func exec(_ sql: String) throws {
@@ -156,6 +231,19 @@ public class DatabaseManager {
         }
     }
 
+    public func updatePeak(down: Double, up: Double) {
+        peakLock.lock()
+        if down > pendingPeakDown { pendingPeakDown = down }
+        if up > pendingPeakUp { pendingPeakUp = up }
+        peakLock.unlock()
+    }
+
+    public func updateProcesses(_ json: String?) {
+        peakLock.lock()
+        pendingProcesses = json
+        peakLock.unlock()
+    }
+
     private func flushMinute() {
         accumLock.lock()
         let down = minuteAccumDown
@@ -165,17 +253,33 @@ public class DatabaseManager {
         let now = lastMinuteFlush
         lastMinuteFlush = Date()
         accumLock.unlock()
+
+        peakLock.lock()
+        let peakD = pendingPeakDown
+        let peakU = pendingPeakUp
+        let procs = pendingProcesses
+        pendingPeakDown = 0
+        pendingPeakUp = 0
+        pendingProcesses = nil
+        peakLock.unlock()
+
         guard down > 0 || up > 0 else { return }
 
         let ts = ISO8601Formatter.string(from: now)
 
         queue.async { [weak self] in
             guard let self, !self.closed else { return }
-            self._insertMinutely(ts: ts, down: down, up: up)
+            self._insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
             self.flushCount += 1
             if self.flushCount % 60 == 0 {
                 self._retainMinutely()
+                self._retainHourly()
                 self.retainEvents()
+            }
+            let hour = Calendar.current.component(.hour, from: now)
+            if hour != self.lastHourAggregated {
+                self.lastHourAggregated = hour
+                self._aggregateHourly(endingAt: now)
             }
         }
     }
@@ -189,20 +293,30 @@ public class DatabaseManager {
         minuteAccumUp = 0
         let now = Date()
         accumLock.unlock()
+
+        peakLock.lock()
+        let peakD = pendingPeakDown
+        let peakU = pendingPeakUp
+        let procs = pendingProcesses
+        pendingPeakDown = 0
+        pendingPeakUp = 0
+        pendingProcesses = nil
+        peakLock.unlock()
+
         guard down > 0 || up > 0 else { return }
 
         let ts = ISO8601Formatter.string(from: now)
 
         queue.sync {
             if closed { return }
-            self._insertMinutely(ts: ts, down: down, up: up)
+            self._insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
         }
     }
 
-    private func _insertMinutely(ts: String, down: UInt64, up: UInt64) {
+    private func _insertMinutely(ts: String, down: UInt64, up: UInt64, peakDown: Double = 0, peakUp: Double = 0, processes: String? = nil) {
         guard let db else { return }
         var stmt: OpaquePointer?
-        let sql = "INSERT INTO traffic_minutely (timestamp, bytes_down, bytes_up) VALUES (?, ?, ?)"
+        let sql = "INSERT INTO traffic_minutely (timestamp, bytes_down, bytes_up, peak_down, peak_up, top_processes) VALUES (?, ?, ?, ?, ?, ?)"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
             os_log(.error, log: log, "insertMinutely prepare failed: %{private}@", String(cString: sqlite3_errmsg(db)))
             return
@@ -211,6 +325,13 @@ public class DatabaseManager {
         sqlite3_bind_text(stmt, 1, ts, -1, SQLITE_TRANSIENT)
         sqlite3_bind_int64(stmt, 2, Int64(down))
         sqlite3_bind_int64(stmt, 3, Int64(up))
+        sqlite3_bind_int64(stmt, 4, Int64(peakDown))
+        sqlite3_bind_int64(stmt, 5, Int64(peakUp))
+        if let processes {
+            sqlite3_bind_text(stmt, 6, processes, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 6)
+        }
         let rc = sqlite3_step(stmt)
         if rc != SQLITE_DONE {
             os_log(.error, log: log, "insertMinutely step failed: %d", rc)
@@ -256,6 +377,25 @@ public class DatabaseManager {
         let rc = sqlite3_step(stmt)
         if rc != SQLITE_DONE {
             os_log(.error, log: log, "retainMinutely step failed: %d", rc)
+        }
+    }
+
+    private let HOURLY_RETENTION_DAYS = 90
+
+    private func _retainHourly() {
+        guard let db else { return }
+        let cutoff = ISO8601Formatter.string(from: Date().addingTimeInterval(-SECONDS_PER_DAY * Double(HOURLY_RETENTION_DAYS)))
+        var stmt: OpaquePointer?
+        let sql = "DELETE FROM traffic_hourly WHERE hour < ?"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            os_log(.error, log: log, "retainHourly prepare failed: %{private}@", String(cString: sqlite3_errmsg(db)))
+            return
+        }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, cutoff, -1, SQLITE_TRANSIENT)
+        let rc = sqlite3_step(stmt)
+        if rc != SQLITE_DONE {
+            os_log(.error, log: log, "retainHourly step failed: %d", rc)
         }
     }
 
@@ -336,6 +476,374 @@ public class DatabaseManager {
             }
             return result
         }
+    }
+
+    // MARK: - Range Queries
+
+    public func dailyTraffic(from: Date, to: Date) -> [(date: String, down: UInt64, up: UInt64)] {
+        let fromStr = String(currentDateStamp(from: from).prefix(10))
+        let toStr = String(currentDateStamp(from: to).prefix(10))
+        return queue.sync {
+            guard let db else { return [] }
+            var stmt: OpaquePointer?
+            let sql = "SELECT date, bytes_down, bytes_up FROM traffic_daily WHERE date >= ? AND date <= ? ORDER BY date ASC"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, fromStr, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, toStr, -1, SQLITE_TRANSIENT)
+            var result: [(String, UInt64, UInt64)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let textPtr = sqlite3_column_text(stmt, 0) else { continue }
+                let date = String(cString: textPtr)
+                result.append((date, UInt64(sqlite3_column_int64(stmt, 1)), UInt64(sqlite3_column_int64(stmt, 2))))
+            }
+            return result
+        }
+    }
+
+    public func minutelyTraffic(from: Date, to: Date) -> [(time: Date, down: UInt64, up: UInt64, peakDown: UInt64, peakUp: UInt64, processes: String?)] {
+        let fromStr = ISO8601Formatter.string(from: from)
+        let toStr = ISO8601Formatter.string(from: to)
+        return queue.sync {
+            guard let db else { return [] }
+            var stmt: OpaquePointer?
+            let sql = "SELECT timestamp, bytes_down, bytes_up, peak_down, peak_up, top_processes FROM traffic_minutely WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, fromStr, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, toStr, -1, SQLITE_TRANSIENT)
+            var result: [(Date, UInt64, UInt64, UInt64, UInt64, String?)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let textPtr = sqlite3_column_text(stmt, 0) else { continue }
+                let ts = String(cString: textPtr)
+                if let date = ISO8601Formatter.date(from: ts) {
+                    let procs = sqlite3_column_text(stmt, 5).map { String(cString: $0) }
+                    result.append((
+                        date,
+                        UInt64(sqlite3_column_int64(stmt, 1)),
+                        UInt64(sqlite3_column_int64(stmt, 2)),
+                        UInt64(sqlite3_column_int64(stmt, 3)),
+                        UInt64(sqlite3_column_int64(stmt, 4)),
+                        procs
+                    ))
+                }
+            }
+            return result
+        }
+    }
+
+    // MARK: - CSV Export
+
+    private static let csvBOM = "\u{FEFF}"
+
+    public func exportDailyCSV(from: Date, to: Date) -> String {
+        let data = dailyTraffic(from: from, to: to)
+        var csv = Self.csvBOM
+        csv += "日期,下载(字节),上传(字节)\n"
+        for row in data {
+            csv += "\(row.date),\(row.down),\(row.up)\n"
+        }
+        return csv
+    }
+
+    public func exportMinutelyCSV(from: Date, to: Date) -> String {
+        let data = minutelyTraffic(from: from, to: to)
+        var csv = Self.csvBOM
+        csv += "时间,下载(字节),上传(字节),峰值下行(bytes/s),峰值上行(bytes/s),活跃进程\n"
+        for row in data {
+            let ts = ISO8601Formatter.string(from: row.time)
+            let procs = row.processes?.replacingOccurrences(of: ",", with: ";") ?? ""
+            csv += "\(ts),\(row.down),\(row.up),\(row.peakDown),\(row.peakUp),\"\(procs)\"\n"
+        }
+        return csv
+    }
+
+    public func exportDailyJSON(from: Date, to: Date) -> String {
+        let data = dailyTraffic(from: from, to: to)
+        let arr = data.map { ["date": $0.date, "down": "\($0.down)", "up": "\($0.up)"] }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: arr, options: [.prettyPrinted, .sortedKeys]),
+              let json = String(data: jsonData, encoding: .utf8) else { return "[]" }
+        return json
+    }
+
+    public func exportMinutelyJSON(from: Date, to: Date) -> String {
+        let data = minutelyTraffic(from: from, to: to)
+        var arr: [[String: Any]] = []
+        for row in data {
+            var dict: [String: Any] = [
+                "time": ISO8601Formatter.string(from: row.time),
+                "down": row.down, "up": row.up,
+                "peak_down": row.peakDown, "peak_up": row.peakUp
+            ]
+            if let procs = row.processes, let data = procs.data(using: .utf8),
+               let parsed = try? JSONSerialization.jsonObject(with: data) {
+                dict["processes"] = parsed
+            }
+            arr.append(dict)
+        }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: arr, options: [.prettyPrinted, .sortedKeys]),
+              let json = String(data: jsonData, encoding: .utf8) else { return "[]" }
+        return json
+    }
+
+    // MARK: - Hourly Aggregation
+
+    private func _aggregateHourly(endingAt date: Date) {
+        guard let db else { return }
+        let cal = Calendar.current
+        guard let hourInterval = cal.dateInterval(of: .hour, for: date) else { return }
+        guard let hourStart = cal.date(byAdding: .hour, value: -1, to: hourInterval.start) else { return }
+        let hourEnd = hourInterval.start
+        let hourStr = ISO8601Formatter.string(from: hourStart)
+        let startStr = ISO8601Formatter.string(from: hourStart)
+        let endStr = ISO8601Formatter.string(from: hourEnd)
+
+        var stmt: OpaquePointer?
+        let sql = "SELECT AVG(bytes_down), AVG(bytes_up), MAX(peak_down), MAX(peak_up), SUM(bytes_down), SUM(bytes_up) FROM traffic_minutely WHERE timestamp >= ? AND timestamp < ?"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            os_log(.error, log: log, "aggregateHourly prepare failed: %{private}@", String(cString: sqlite3_errmsg(db)))
+            return
+        }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, startStr, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, endStr, -1, SQLITE_TRANSIENT)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return }
+
+        let avgDown = sqlite3_column_double(stmt, 0)
+        let avgUp = sqlite3_column_double(stmt, 1)
+        let peakDown = UInt64(sqlite3_column_int64(stmt, 2))
+        let peakUp = UInt64(sqlite3_column_int64(stmt, 3))
+        let totalDown = UInt64(sqlite3_column_int64(stmt, 4))
+        let totalUp = UInt64(sqlite3_column_int64(stmt, 5))
+        guard totalDown > 0 || totalUp > 0 else { return }
+
+        let peakDownTime = _findPeakTime(column: "peak_down", start: startStr, end: endStr)
+        let peakUpTime = _findPeakTime(column: "peak_up", start: startStr, end: endStr)
+
+        var insertStmt: OpaquePointer?
+        let insertSql = "INSERT OR REPLACE INTO traffic_hourly (hour, avg_down, avg_up, peak_down, peak_up, total_down, total_up, peak_down_time, peak_up_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        guard sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nil) == SQLITE_OK else {
+            os_log(.error, log: log, "aggregateHourly insert prepare failed: %{private}@", String(cString: sqlite3_errmsg(db)))
+            return
+        }
+        defer { sqlite3_finalize(insertStmt) }
+        sqlite3_bind_text(insertStmt, 1, hourStr, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(insertStmt, 2, avgDown)
+        sqlite3_bind_double(insertStmt, 3, avgUp)
+        sqlite3_bind_int64(insertStmt, 4, Int64(peakDown))
+        sqlite3_bind_int64(insertStmt, 5, Int64(peakUp))
+        sqlite3_bind_int64(insertStmt, 6, Int64(totalDown))
+        sqlite3_bind_int64(insertStmt, 7, Int64(totalUp))
+        if let peakDownTime {
+            sqlite3_bind_text(insertStmt, 8, peakDownTime, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(insertStmt, 8)
+        }
+        if let peakUpTime {
+            sqlite3_bind_text(insertStmt, 9, peakUpTime, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(insertStmt, 9)
+        }
+        let rc = sqlite3_step(insertStmt)
+        if rc != SQLITE_DONE {
+            os_log(.error, log: log, "aggregateHourly insert step failed: %d", rc)
+        }
+    }
+
+    private func _findPeakTime(column: String, start: String, end: String) -> String? {
+        guard let db else { return nil }
+        var stmt: OpaquePointer?
+        let sql = "SELECT timestamp FROM traffic_minutely WHERE timestamp >= ? AND timestamp < ? ORDER BY \(column) DESC LIMIT 1"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, start, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, end, -1, SQLITE_TRANSIENT)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        return sqlite3_column_text(stmt, 0).map { String(cString: $0) }
+    }
+
+    // MARK: - Hourly Queries
+
+    public struct HourlyRecord {
+        public let hour: Date
+        public let avgDown: Double
+        public let avgUp: Double
+        public let peakDown: UInt64
+        public let peakUp: UInt64
+        public let totalDown: UInt64
+        public let totalUp: UInt64
+        public let peakDownTime: Date?
+        public let peakUpTime: Date?
+
+        public init(hour: Date, avgDown: Double, avgUp: Double, peakDown: UInt64, peakUp: UInt64, totalDown: UInt64, totalUp: UInt64, peakDownTime: Date? = nil, peakUpTime: Date? = nil) {
+            self.hour = hour
+            self.avgDown = avgDown
+            self.avgUp = avgUp
+            self.peakDown = peakDown
+            self.peakUp = peakUp
+            self.totalDown = totalDown
+            self.totalUp = totalUp
+            self.peakDownTime = peakDownTime
+            self.peakUpTime = peakUpTime
+        }
+    }
+
+    private static func _parseHourlyRecord(stmt: OpaquePointer) -> HourlyRecord? {
+        guard let textPtr = sqlite3_column_text(stmt, 0) else { return nil }
+        let dateStr = String(cString: textPtr)
+        guard let date = ISO8601Formatter.date(from: dateStr) else { return nil }
+        let peakDownTime = sqlite3_column_text(stmt, 7).flatMap { ISO8601Formatter.date(from: String(cString: $0)) }
+        let peakUpTime = sqlite3_column_text(stmt, 8).flatMap { ISO8601Formatter.date(from: String(cString: $0)) }
+        return HourlyRecord(
+            hour: date,
+            avgDown: sqlite3_column_double(stmt, 1),
+            avgUp: sqlite3_column_double(stmt, 2),
+            peakDown: UInt64(sqlite3_column_int64(stmt, 3)),
+            peakUp: UInt64(sqlite3_column_int64(stmt, 4)),
+            totalDown: UInt64(sqlite3_column_int64(stmt, 5)),
+            totalUp: UInt64(sqlite3_column_int64(stmt, 6)),
+            peakDownTime: peakDownTime,
+            peakUpTime: peakUpTime
+        )
+    }
+
+    public func hourlyTrafficToday() -> [HourlyRecord] {
+        let cal = Calendar.current
+        let startOfDay = cal.startOfDay(for: Date())
+        let startStr = ISO8601Formatter.string(from: startOfDay)
+        return queue.sync {
+            guard let db else { return [] as [HourlyRecord] }
+            var stmt: OpaquePointer?
+            let sql = "SELECT hour, avg_down, avg_up, peak_down, peak_up, total_down, total_up, peak_down_time, peak_up_time FROM traffic_hourly WHERE hour >= ? ORDER BY hour ASC"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] as [HourlyRecord] }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, startStr, -1, SQLITE_TRANSIENT)
+            var result: [HourlyRecord] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let record = Self._parseHourlyRecord(stmt: stmt!) { result.append(record) }
+            }
+            return result
+        }
+    }
+
+    public func hourlyTrafficRange(from: Date, to: Date) -> [HourlyRecord] {
+        let fromStr = ISO8601Formatter.string(from: from)
+        let toStr = ISO8601Formatter.string(from: to)
+        return queue.sync {
+            guard let db else { return [] as [HourlyRecord] }
+            var stmt: OpaquePointer?
+            let sql = "SELECT hour, avg_down, avg_up, peak_down, peak_up, total_down, total_up, peak_down_time, peak_up_time FROM traffic_hourly WHERE hour >= ? AND hour <= ? ORDER BY hour ASC"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] as [HourlyRecord] }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, fromStr, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, toStr, -1, SQLITE_TRANSIENT)
+            var result: [HourlyRecord] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let record = Self._parseHourlyRecord(stmt: stmt!) { result.append(record) }
+            }
+            return result
+        }
+    }
+
+    public func dailyTrafficSummary(days: Int) -> [(date: String, avgDown: Double, avgUp: Double, peakDown: UInt64, peakUp: UInt64, totalDown: UInt64, totalUp: UInt64)] {
+        return queue.sync {
+            guard let db else { return [] }
+            let cal = Calendar.current
+            let endDate = cal.startOfDay(for: Date())
+            guard let startDate = cal.date(byAdding: .day, value: -days, to: endDate) else { return [] }
+            let fromStr = ISO8601Formatter.string(from: startDate)
+            var stmt: OpaquePointer?
+            let sql = """
+                SELECT SUBSTR(hour, 1, 10) as day,
+                       AVG(avg_down), AVG(avg_up),
+                       MAX(peak_down), MAX(peak_up),
+                       SUM(total_down), SUM(total_up)
+                FROM traffic_hourly WHERE hour >= ?
+                GROUP BY day ORDER BY day ASC
+            """
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, fromStr, -1, SQLITE_TRANSIENT)
+            var result: [(String, Double, Double, UInt64, UInt64, UInt64, UInt64)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let textPtr = sqlite3_column_text(stmt, 0) else { continue }
+                let date = String(cString: textPtr)
+                result.append((
+                    date,
+                    sqlite3_column_double(stmt, 1),
+                    sqlite3_column_double(stmt, 2),
+                    UInt64(sqlite3_column_int64(stmt, 3)),
+                    UInt64(sqlite3_column_int64(stmt, 4)),
+                    UInt64(sqlite3_column_int64(stmt, 5)),
+                    UInt64(sqlite3_column_int64(stmt, 6))
+                ))
+            }
+            return result
+        }
+    }
+
+    public func weeklyTrafficSummary(weeks: Int) -> [(week: String, avgDown: Double, avgUp: Double, peakDown: UInt64, peakUp: UInt64, totalDown: UInt64, totalUp: UInt64)] {
+        return queue.sync {
+            guard let db else { return [] }
+            let cal = Calendar.current
+            let endDate = cal.startOfDay(for: Date())
+            guard let startDate = cal.date(byAdding: .day, value: -weeks * 7, to: endDate) else { return [] }
+            let fromStr = ISO8601Formatter.string(from: startDate)
+            var stmt: OpaquePointer?
+            let sql = """
+                SELECT SUBSTR(hour, 1, 10) as day,
+                       AVG(avg_down), AVG(avg_up),
+                       MAX(peak_down), MAX(peak_up),
+                       SUM(total_down), SUM(total_up)
+                FROM traffic_hourly WHERE hour >= ?
+                GROUP BY day ORDER BY day ASC
+            """
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, fromStr, -1, SQLITE_TRANSIENT)
+            var dailyRows: [(String, Double, Double, UInt64, UInt64, UInt64, UInt64)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let textPtr = sqlite3_column_text(stmt, 0) else { continue }
+                dailyRows.append((
+                    String(cString: textPtr),
+                    sqlite3_column_double(stmt, 1),
+                    sqlite3_column_double(stmt, 2),
+                    UInt64(sqlite3_column_int64(stmt, 3)),
+                    UInt64(sqlite3_column_int64(stmt, 4)),
+                    UInt64(sqlite3_column_int64(stmt, 5)),
+                    UInt64(sqlite3_column_int64(stmt, 6))
+                ))
+            }
+            var weeklyResult: [(String, Double, Double, UInt64, UInt64, UInt64, UInt64)] = []
+            var weekBucket: [(String, Double, Double, UInt64, UInt64, UInt64, UInt64)] = []
+            var lastWeekStr = ""
+            for row in dailyRows {
+                let dateStr = row.0
+                guard let date = ISO8601Formatter.date(from: dateStr + "T00:00:00.000Z") else { continue }
+                let weekStart = cal.dateInterval(of: .weekOfYear, for: date)?.start ?? date
+                let weekStr = String(ISO8601Formatter.string(from: weekStart).prefix(10))
+                if weekStr != lastWeekStr && !weekBucket.isEmpty {
+                    weeklyResult.append(aggregateWeek(weekStr: lastWeekStr, days: weekBucket))
+                    weekBucket = []
+                }
+                lastWeekStr = weekStr
+                weekBucket.append(row)
+            }
+            if !weekBucket.isEmpty {
+                weeklyResult.append(aggregateWeek(weekStr: lastWeekStr, days: weekBucket))
+            }
+            return weeklyResult
+        }
+    }
+
+    private func aggregateWeek(weekStr: String, days: [(String, Double, Double, UInt64, UInt64, UInt64, UInt64)]) -> (String, Double, Double, UInt64, UInt64, UInt64, UInt64) {
+        let avgDown = days.map(\.1).reduce(0, +) / Double(days.count)
+        let avgUp = days.map(\.2).reduce(0, +) / Double(days.count)
+        let peakDown = days.map(\.3).max() ?? 0
+        let peakUp = days.map(\.4).max() ?? 0
+        let totalDown = days.map(\.5).reduce(0, +)
+        let totalUp = days.map(\.6).reduce(0, +)
+        return (weekStr, avgDown, avgUp, peakDown, peakUp, totalDown, totalUp)
     }
 
     // MARK: - Event Logging
@@ -487,6 +995,12 @@ public class DatabaseManager {
             sqlite3_free(errMsg)
             hasError = true
         }
+        rc = sqlite3_exec(db, "DELETE FROM traffic_hourly", nil, nil, &errMsg)
+        if rc != SQLITE_OK {
+            os_log(.error, log: log, "clearTables DELETE hourly failed: %d", rc)
+            sqlite3_free(errMsg)
+            hasError = true
+        }
         if hasError {
             rc = sqlite3_exec(db, "ROLLBACK", nil, nil, &errMsg)
             if rc != SQLITE_OK {
@@ -503,7 +1017,7 @@ public class DatabaseManager {
     }
 }
 
-private let ISO8601Formatter: ISO8601DateFormatter = {
+public let ISO8601Formatter: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return f

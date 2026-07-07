@@ -20,15 +20,18 @@ private let offBytes: Int = 44
 private let offKeyInfoSize: Int = 22
 private let offKeyInfoType: Int = 26
 
-private func smcFourCharCode(_ str: String) -> UInt32 {
-    precondition(str.utf8.count == 4, "SMC key must be exactly 4 characters, got '\(str)'")
+private func smcFourCharCode(_ str: String) -> UInt32? {
+    guard str.utf8.count == 4 else {
+        os_log(.error, log: thermalLog, "SMC key length invalid: '%{public}@'", str)
+        return nil
+    }
     var result: UInt32 = 0
     for char in str.utf8 { result = (result << 8) | UInt32(char) }
     return result
 }
 
 private func smcRead(conn: io_connect_t, key: String) -> Double? {
-    let keyCode = smcFourCharCode(key)
+    guard let keyCode = smcFourCharCode(key) else { return nil }
 
     // Step 1: read key info
     var input = Data(count: 80)
@@ -85,12 +88,12 @@ private func smcRead(conn: io_connect_t, key: String) -> Double? {
             return nil
         }
 
-    if dataType == smcFourCharCode("sp78") {
+    if let sp78 = smcFourCharCode("sp78"), dataType == sp78 {
         guard dataSize >= 2, offBytes + 2 <= output.count else { return nil }
         let raw = UInt16(output[offBytes]) << 8 | UInt16(output[offBytes + 1])
         return Double(raw) / 256.0
     }
-    if dataType == smcFourCharCode("flt ") {
+    if let flt = smcFourCharCode("flt "), dataType == flt {
         guard dataSize >= 4, offBytes + 4 <= output.count else { return nil }
         let arr = [output[offBytes], output[offBytes + 1], output[offBytes + 2], output[offBytes + 3]]
         let raw = arr.withUnsafeBytes { $0.load(as: UInt32.self) }

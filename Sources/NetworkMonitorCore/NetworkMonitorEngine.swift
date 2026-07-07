@@ -165,8 +165,12 @@ public class NetworkMonitorEngine: ObservableObject {
         if sec != lastAccumSecond {
             if let db = DatabaseManager.shared {
                 db.accumulateTraffic(down: downDiff, up: upDiff)
+                db.updatePeak(down: currentDownSpeed, up: currentUpSpeed)
             } else {
                 os_log(.error, log: netLog, "DatabaseManager.shared is nil, traffic data dropped")
+                DispatchQueue.main.async {
+                    self.objectWillChange.send()
+                }
             }
             todayDown += downDiff
             todayUp += upDiff

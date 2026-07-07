@@ -51,7 +51,6 @@ public func formatBytes(_ bytes: UInt64, dataUnit: DataUnit) -> String {
 }
 
 public func formatSpeed(_ bps: Double) -> String {
-    assert(bps >= 0, "formatSpeed received negative value \(bps)")
     if bps < 0 { return "0 KB/s" }
     let kbps = bps / BYTES_PER_KB
     if kbps < BYTES_PER_KB { return String(format: "%.1f KB/s", kbps) }
@@ -82,6 +81,20 @@ public func shortSpeed(_ bps: Double, unit: DisplayUnit) -> String {
     }
 }
 
+private let threadSafeDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd"
+    f.locale = Locale(identifier: "en_US_POSIX")
+    return f
+}()
+
+private let threadSafeTimeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "HH:mm:ss"
+    f.locale = Locale(identifier: "en_US_POSIX")
+    return f
+}()
+
 public func makeDateFormatter() -> DateFormatter {
     let f = DateFormatter()
     f.dateFormat = "yyyy-MM-dd"
@@ -96,8 +109,10 @@ public func makeTimeFormatter() -> DateFormatter {
     return f
 }
 
-/// Thread-safe date string helper. Creates a formatter per call to avoid
-/// cross-thread access issues with the non-thread-safe DateFormatter.
 public func currentDateStamp() -> String {
-    makeDateFormatter().string(from: Date())
+    threadSafeDateFormatter.string(from: Date())
+}
+
+public func currentDateStamp(from date: Date) -> String {
+    threadSafeDateFormatter.string(from: date)
 }

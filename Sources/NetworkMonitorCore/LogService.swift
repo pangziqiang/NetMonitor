@@ -22,9 +22,3 @@ public enum LogService {
         DatabaseManager.shared?.insertEvent(timestamp: ts, category: LogCategory.error.rawValue, event: event, detail: detail)
     }
 }
-
-private let ISO8601Formatter: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return f
-}()

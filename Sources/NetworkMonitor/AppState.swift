@@ -18,4 +18,5 @@ class AppState: ObservableObject {
     @Published var systemGraphType: SystemGraphType = .cpu
     @Published var settingsTab: SettingsTab = .general
     @Published var historySeconds = 120
+    @Published var databaseAvailable = true
 }

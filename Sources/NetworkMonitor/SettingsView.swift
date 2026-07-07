@@ -94,8 +94,9 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             } else if appState.settingsTab == .history {
                 VStack(alignment: .leading, spacing: 0) {
-                    HistoryView(unit: settings.displayUnit)
+                    HistoryView()
                 }
+                .clipped()
                 .padding(.horizontal, 20).padding(.bottom, 20)
                 .padding(.top, Spacing.md)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -396,6 +397,29 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L10n.tr("Export Diagnostics"))
+
+                Divider().padding(.vertical, 4)
+
+                Button {
+                    let alert = NSAlert()
+                    alert.messageText = L10n.tr("Clear DB Title")
+                    alert.informativeText = L10n.tr("Clear DB Message")
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: L10n.tr("Clear All"))
+                    alert.addButton(withTitle: L10n.tr("Cancel"))
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        DatabaseManager.shared?.clearAllTraffic()
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "trash").font(.system(size: 12)).foregroundColor(.errorColor).frame(width: 20)
+                        Text(L10n.tr("Clear Traffic Data")).font(.system(size: 12)).foregroundColor(.errorColor)
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L10n.tr("Clear Traffic Data"))
             }
 
         }
@@ -453,204 +477,330 @@ extension View {
     }
 }
 
-struct HistoryView: View {
-    @State private var dailyData: [(date: String, down: UInt64, up: UInt64)] = []
-    @Environment(\.colorScheme) var colorScheme
-    var unit: DisplayUnit = .auto
-    private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
+enum HistoryTimeRange: String, CaseIterable {
+    case today = "今日"
+    case week = "本周"
+    case month = "本月"
+}
 
-    private var totalDown: UInt64 { dailyData.reduce(0) { $0 + $1.down } }
-    private var totalUp: UInt64 { dailyData.reduce(0) { $0 + $1.up } }
+struct HistoryView: View {
+    @State private var timeRange: HistoryTimeRange = .today
+    @State private var hourlyData: [DatabaseManager.HourlyRecord] = []
+    @State private var dailySummary: [(date: String, avgDown: Double, avgUp: Double, peakDown: UInt64, peakUp: UInt64, totalDown: UInt64, totalUp: UInt64)] = []
+    @State private var weeklySummary: [(week: String, avgDown: Double, avgUp: Double, peakDown: UInt64, peakUp: UInt64, totalDown: UInt64, totalUp: UInt64)] = []
+    @State private var showExportSheet = false
+    @EnvironmentObject var settings: AppSettings
+    @Environment(\.colorScheme) var colorScheme
+    private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
+    
+    private static let cacheQueue = DispatchQueue(label: "com.opencode.historycache")
+    private static var _hourlyCache: (timestamp: Date, data: [DatabaseManager.HourlyRecord])?
+    private static var _dailyCache: (timestamp: Date, data: [(String, Double, Double, UInt64, UInt64, UInt64, UInt64)])?
+    private static var _weeklyCache: (timestamp: Date, data: [(String, Double, Double, UInt64, UInt64, UInt64, UInt64)])?
+    private static let cacheTTL: TimeInterval = 30
 
     var body: some View {
         VStack(spacing: Spacing.md) {
+            // Time range switcher
+            Picker("", selection: $timeRange) {
+                ForEach(HistoryTimeRange.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+
             // Summary cards
-            HStack(spacing: Spacing.sm) {
-                trafficSummaryCard(
-                    icon: "arrow.up.circle.fill",
-                    color: .uploadColor,
-                    label: L10n.tr("Total Upload"),
-                    value: formatBytes(totalUp, unit: unit)
-                )
-                trafficSummaryCard(
-                    icon: "arrow.down.circle.fill",
-                    color: .downloadColor,
-                    label: L10n.tr("Total Download"),
-                    value: formatBytes(totalDown, unit: unit)
-                )
+            summaryCards
+
+            // Charts
+            if timeRange == .today {
+                SpeedTrendChart(records: chartRecords, displayUnit: settings.displayUnit)
             }
+            TrafficBarChart(records: chartRecords, dataUnit: settings.dataUnit)
 
-            // Daily breakdown list
-            if dailyData.isEmpty {
-                VStack(spacing: Spacing.sm) {
-                    Image(systemName: "chart.bar.xaxis").font(.title2).foregroundColor(theme.textMuted.opacity(0.4))
-                    Text(L10n.tr("No Data")).font(.system(size: 12)).foregroundColor(theme.textMuted)
-                }
-                .frame(maxWidth: .infinity).padding(.vertical, 40)
-                .card(.glass)
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Header row
-                    HStack {
-                        Text(L10n.tr("Date"))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(theme.textMuted)
-                            .frame(width: 60, alignment: .leading)
-                        Spacer()
-                        HStack(spacing: 12) {
-                            Text(L10n.tr("Upload"))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.uploadColor)
-                                .frame(width: 70, alignment: .trailing)
-                            Text(L10n.tr("Download"))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.downloadColor)
-                                .frame(width: 70, alignment: .trailing)
-                        }
-                    }
-                    .padding(.horizontal, Spacing.md).padding(.top, Spacing.md).padding(.bottom, Spacing.sm)
+            // Data table
+            dataTable
 
-                    Divider().padding(.horizontal, Spacing.md)
-
-                    // Data rows
-                    ForEach(dailyData.indices, id: \.self) { i in
-                        let item = dailyData[i]
-                        HStack {
-                            Text(String(item.date.suffix(5)))
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundColor(theme.textSecondary)
-                                .frame(width: 60, alignment: .leading)
-                            Spacer()
-                            HStack(spacing: 12) {
-                                Text(formatBytes(item.up, unit: unit))
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.uploadColor)
-                                    .frame(width: 70, alignment: .trailing)
-                                Text(formatBytes(item.down, unit: unit))
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.downloadColor)
-                                    .frame(width: 70, alignment: .trailing)
-                            }
-                        }
-                        .padding(.vertical, 5)
-                        .padding(.horizontal, Spacing.md)
-                        if i < dailyData.count - 1 {
-                            Divider().padding(.horizontal, Spacing.md)
-                        }
-                    }
-                }
-                .card(.glass)
-            }
-
-            // Clear database button
+            // Export button
             Button {
-                let alert = NSAlert()
-                alert.messageText = L10n.tr("Clear DB Title")
-                alert.informativeText = L10n.tr("Clear DB Message")
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: L10n.tr("Clear All"))
-                alert.addButton(withTitle: L10n.tr("Cancel"))
-                if alert.runModal() == .alertFirstButtonReturn {
-                    DatabaseManager.shared?.clearAllTraffic()
-                    dailyData = []
-                }
+                showExportSheet = true
             } label: {
                 HStack {
-                    Image(systemName: "trash").font(.system(size: 12))
-                    Text(L10n.tr("Clear Database")).font(.system(size: 12))
+                    Image(systemName: "square.and.arrow.up").font(.system(size: 12))
+                    Text(L10n.tr("Export Data")).font(.system(size: 12))
                     Spacer()
                 }
             }
-            .buttonStyle(.glass(.destructive))
-            .accessibilityLabel(L10n.tr("Clear Database"))
+            .buttonStyle(.glass(.primary))
+            .accessibilityLabel(L10n.tr("Export Data"))
+        }
+        .sheet(isPresented: $showExportSheet) {
+            ExportDataSheet(isPresented: $showExportSheet, theme: theme)
         }
         .task { await loadData() }
+        .onChange(of: timeRange) { _, _ in
+            Task { await loadData() }
+        }
     }
 
-    private func trafficSummaryCard(icon: String, color: Color, label: String, value: String) -> some View {
+    private var chartRecords: [DatabaseManager.HourlyRecord] {
+        switch timeRange {
+        case .today: return hourlyData
+        case .week: return dailySummaryToHourly(dailySummary)
+        case .month: return weeklySummaryToHourly(weeklySummary)
+        }
+    }
+
+    private func dailySummaryToHourly(_ data: [(date: String, avgDown: Double, avgUp: Double, peakDown: UInt64, peakUp: UInt64, totalDown: UInt64, totalUp: UInt64)]) -> [DatabaseManager.HourlyRecord] {
+        data.map { d in
+            DatabaseManager.HourlyRecord(
+                hour: ISO8601Formatter.date(from: d.date + "T00:00:00.000Z") ?? Date(),
+                avgDown: d.avgDown, avgUp: d.avgUp,
+                peakDown: d.peakDown, peakUp: d.peakUp,
+                totalDown: d.totalDown, totalUp: d.totalUp
+            )
+        }
+    }
+
+    private func weeklySummaryToHourly(_ data: [(week: String, avgDown: Double, avgUp: Double, peakDown: UInt64, peakUp: UInt64, totalDown: UInt64, totalUp: UInt64)]) -> [DatabaseManager.HourlyRecord] {
+        data.map { d in
+            DatabaseManager.HourlyRecord(
+                hour: ISO8601Formatter.date(from: d.week + "T00:00:00.000Z") ?? Date(),
+                avgDown: d.avgDown, avgUp: d.avgUp,
+                peakDown: d.peakDown, peakUp: d.peakUp,
+                totalDown: d.totalDown, totalUp: d.totalUp
+            )
+        }
+    }
+
+    private var summaryCards: some View {
+        let totalD: UInt64
+        let totalU: UInt64
+        let avgD: Double
+        let avgU: Double
+        let peakD: UInt64
+        let peakU: UInt64
+        let peakDTime: Date?
+        let peakUTime: Date?
+
+        switch timeRange {
+        case .today:
+            totalD = hourlyData.reduce(0) { $0 + $1.totalDown }
+            totalU = hourlyData.reduce(0) { $0 + $1.totalUp }
+            avgD = hourlyData.map(\.avgDown).average
+            avgU = hourlyData.map(\.avgUp).average
+            let peakDRecord = hourlyData.max(by: { $0.peakDown < $1.peakDown })
+            let peakURecord = hourlyData.max(by: { $0.peakUp < $1.peakUp })
+            peakD = peakDRecord?.peakDown ?? 0
+            peakU = peakURecord?.peakUp ?? 0
+            peakDTime = peakDRecord?.peakDownTime ?? peakDRecord?.hour
+            peakUTime = peakURecord?.peakUpTime ?? peakURecord?.hour
+        case .week:
+            totalD = dailySummary.reduce(0) { $0 + $1.totalDown }
+            totalU = dailySummary.reduce(0) { $0 + $1.totalUp }
+            avgD = dailySummary.map(\.avgDown).average
+            avgU = dailySummary.map(\.avgUp).average
+            peakD = dailySummary.map(\.peakDown).max() ?? 0
+            peakU = dailySummary.map(\.peakUp).max() ?? 0
+            peakDTime = nil
+            peakUTime = nil
+        case .month:
+            totalD = weeklySummary.reduce(0) { $0 + $1.totalDown }
+            totalU = weeklySummary.reduce(0) { $0 + $1.totalUp }
+            avgD = weeklySummary.map(\.avgDown).average
+            avgU = weeklySummary.map(\.avgUp).average
+            peakD = weeklySummary.map(\.peakDown).max() ?? 0
+            peakU = weeklySummary.map(\.peakUp).max() ?? 0
+            peakDTime = nil
+            peakUTime = nil
+        }
+
+        return VStack(spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                summaryCard(icon: "arrow.up.circle.fill", color: .uploadColor, label: L10n.tr("Total Upload"), value: formatBytes(totalU, dataUnit: settings.dataUnit))
+                summaryCard(icon: "arrow.down.circle.fill", color: .downloadColor, label: L10n.tr("Total Download"), value: formatBytes(totalD, dataUnit: settings.dataUnit))
+            }
+            HStack(spacing: Spacing.sm) {
+                summaryCard(icon: "speedometer", color: .uploadColor, label: L10n.tr("Avg Upload"), value: formatSpeed(avgU, unit: settings.displayUnit))
+                summaryCard(icon: "speedometer", color: .downloadColor, label: L10n.tr("Avg Download"), value: formatSpeed(avgD, unit: settings.displayUnit))
+            }
+            if timeRange == .today {
+                HStack(spacing: Spacing.sm) {
+                    peakCard(color: .uploadColor, label: L10n.tr("Peak Upload"), speed: Double(peakU), time: peakUTime)
+                    peakCard(color: .downloadColor, label: L10n.tr("Peak Download"), speed: Double(peakD), time: peakDTime)
+                }
+            }
+        }
+    }
+
+    private func summaryCard(icon: String, color: Color, label: String, value: String) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: icon).font(.system(size: 16)).foregroundColor(color)
+            Image(systemName: icon).font(.system(size: 14)).foregroundColor(color)
             VStack(alignment: .leading, spacing: 1) {
-                Text(label).font(.system(size: 11)).foregroundColor(theme.textMuted)
-                Text(value).font(.system(size: 14, weight: .semibold, design: .monospaced)).foregroundColor(color)
+                Text(label).font(.system(size: 10)).foregroundColor(theme.textMuted)
+                Text(value).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundColor(color)
             }
             Spacer()
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
+        .padding(.horizontal, 12).padding(.vertical, 8)
         .background(color.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(color.opacity(0.12), lineWidth: 0.5))
     }
 
-    @MainActor
-    private func loadData() async {
-        let daily = await Task.detached(priority: .userInitiated) {
-            DatabaseManager.shared?.dailyTraffic(days: 7) ?? []
-        }.value
-        self.dailyData = daily
-    }
-}
-
-// MARK: - Permissions View
-
-struct PermissionsView: View {
-    @State private var isAppleSilicon = false
-    @Environment(\.colorScheme) var colorScheme
-    private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
-
-    var body: some View {
-        VStack(spacing: Spacing.lg) {
-            // Architecture info
-            settingsSection(L10n.tr("Current Device"), textColor: theme.textMuted) {
-                HStack {
-                    Image(systemName: isAppleSilicon ? "cpu" : "cpu.fill")
-                        .font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
-                    Text(isAppleSilicon ? L10n.tr("Apple Silicon") : L10n.tr("Intel"))
-                        .font(.system(size: 12)).foregroundColor(theme.textSecondary)
-                    Spacer()
-                    Circle().fill(Color.statusActive).frame(width: 8, height: 8)
+    private func peakCard(color: Color, label: String, speed: Double, time: Date?) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.up.circle").font(.system(size: 14)).foregroundColor(color)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(label).font(.system(size: 10)).foregroundColor(theme.textMuted)
+                    if let time {
+                        Text("@\(formatPeakTime(time))")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(theme.textMuted)
+                    }
                 }
-            }
-
-            // Permissions
-            settingsSection(L10n.tr("System Permissions"), textColor: theme.textMuted) {
-                permissionRow(
-                    icon: "network", name: L10n.tr("Network Monitor"),
-                    description: L10n.tr("Network Monitor Desc"),
-                    granted: true
-                )
-                permissionRow(
-                    icon: "pip", name: L10n.tr("Floating Window"),
-                    description: L10n.tr("Floating Window Desc"),
-                    granted: true
-                )
-            }
-        }
-        .onAppear {
-            isAppleSilicon = ThermalMonitor.isAppleSilicon
-        }
-    }
-
-    private func permissionRow(icon: String, name: String, description: String, granted: Bool) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 12))
-                .foregroundColor(granted ? .statusActive : theme.textMuted)
-                .frame(width: 20)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(name).font(.system(size: 12)).foregroundColor(theme.textSecondary)
-                Text(description).font(.system(size: 10)).foregroundColor(theme.textMuted)
+                Text(formatSpeed(speed, unit: settings.displayUnit))
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundColor(color)
             }
             Spacer()
-            HStack(spacing: 6) {
-                Circle().fill(granted ? Color.statusActive : Color.errorColor)
-                    .frame(width: 7, height: 7)
-                Text(granted ? L10n.tr("Authorized") : L10n.tr("Unauthorized"))
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(granted ? .statusActive : .errorColor)
-            }
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(color.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(color.opacity(0.12), lineWidth: 0.5))
     }
 
+    private func formatPeakTime(_ date: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        switch timeRange {
+        case .today: fmt.dateFormat = "HH:mm:ss"
+        default: fmt.dateFormat = "MM/dd HH:mm"
+        }
+        return fmt.string(from: date)
+    }
+
+    private var dataTable: some View {
+        let rows: [(String, String, String, String, String)]
+        let headerTime: String
+
+        switch timeRange {
+        case .today:
+            headerTime = L10n.tr("Hour")
+            rows = hourlyData.map { r in
+                let cal = Calendar.current
+                let h = cal.component(.hour, from: r.hour)
+                return ("\(String(format: "%02d:00", h))", formatSpeed(r.avgDown, unit: settings.displayUnit), formatSpeed(Double(r.peakDown), unit: settings.displayUnit), formatBytes(r.totalDown, dataUnit: settings.dataUnit), formatBytes(r.totalUp, dataUnit: settings.dataUnit))
+            }
+        case .week:
+            headerTime = L10n.tr("Date")
+            rows = dailySummary.map { d in
+                (String(d.date.suffix(5)), formatSpeed(d.avgDown, unit: settings.displayUnit), formatSpeed(Double(d.peakDown), unit: settings.displayUnit), formatBytes(d.totalDown, dataUnit: settings.dataUnit), formatBytes(d.totalUp, dataUnit: settings.dataUnit))
+            }
+        case .month:
+            headerTime = L10n.tr("Week")
+            rows = weeklySummary.map { w in
+                (String(w.week.suffix(4)), formatSpeed(w.avgDown, unit: settings.displayUnit), formatSpeed(Double(w.peakDown), unit: settings.displayUnit), formatBytes(w.totalDown, dataUnit: settings.dataUnit), formatBytes(w.totalUp, dataUnit: settings.dataUnit))
+            }
+        }
+
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(headerTime).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 50, alignment: .leading)
+                Spacer()
+                Text(L10n.tr("Avg Speed")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 70, alignment: .trailing)
+                Text(L10n.tr("Peak Speed")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 70, alignment: .trailing)
+                Text(L10n.tr("Download")).font(.system(size: 11, weight: .medium)).foregroundColor(.downloadColor).frame(width: 60, alignment: .trailing)
+                Text(L10n.tr("Upload")).font(.system(size: 11, weight: .medium)).foregroundColor(.uploadColor).frame(width: 60, alignment: .trailing)
+            }
+            .padding(.horizontal, Spacing.md).padding(.top, Spacing.md).padding(.bottom, Spacing.sm)
+
+            Divider().padding(.horizontal, Spacing.md)
+
+            if rows.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "chart.bar.xaxis").font(.title2).foregroundColor(theme.textMuted.opacity(0.4))
+                    Text(L10n.tr("No Data")).font(.system(size: 12)).foregroundColor(theme.textMuted)
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 30)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(rows.indices, id: \.self) { i in
+                            let row = rows[i]
+                            HStack {
+                                Text(row.0).font(.system(size: 11, design: .monospaced)).foregroundColor(theme.textSecondary).frame(width: 50, alignment: .leading)
+                                Spacer()
+                                Text(row.1).font(.system(size: 11, design: .monospaced)).foregroundColor(theme.textSecondary).frame(width: 70, alignment: .trailing)
+                                Text(row.2).font(.system(size: 11, design: .monospaced)).foregroundColor(theme.textSecondary).frame(width: 70, alignment: .trailing)
+                                Text(row.3).font(.system(size: 11, design: .monospaced)).foregroundColor(.downloadColor).frame(width: 60, alignment: .trailing)
+                                Text(row.4).font(.system(size: 11, design: .monospaced)).foregroundColor(.uploadColor).frame(width: 60, alignment: .trailing)
+                            }
+                            .padding(.vertical, 4).padding(.horizontal, Spacing.md)
+                            if i < rows.count - 1 {
+                                Divider().padding(.horizontal, Spacing.md)
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 200)
+            }
+        }
+        .card(.glass)
+    }
+
+    @MainActor
+    private func loadData() async {
+        switch timeRange {
+        case .today:
+            let cached: [DatabaseManager.HourlyRecord]? = Self.cacheQueue.sync {
+                guard let c = Self._hourlyCache, Date().timeIntervalSince(c.timestamp) < Self.cacheTTL else { return nil }
+                return c.data
+            }
+            if let cached {
+                self.hourlyData = cached
+                return
+            }
+            let data = await Task.detached(priority: .userInitiated) {
+                DatabaseManager.shared?.hourlyTrafficToday() ?? []
+            }.value
+            Self.cacheQueue.sync { Self._hourlyCache = (Date(), data) }
+            self.hourlyData = data
+        case .week:
+            let cached = Self.cacheQueue.sync { () -> [(String, Double, Double, UInt64, UInt64, UInt64, UInt64)]? in
+                guard let c = Self._dailyCache, Date().timeIntervalSince(c.timestamp) < Self.cacheTTL else { return nil }
+                return c.data
+            }
+            if let cached {
+                self.dailySummary = cached
+                return
+            }
+            let data = await Task.detached(priority: .userInitiated) {
+                DatabaseManager.shared?.dailyTrafficSummary(days: 7) ?? []
+            }.value
+            Self.cacheQueue.sync { Self._dailyCache = (Date(), data) }
+            self.dailySummary = data
+        case .month:
+            let cached = Self.cacheQueue.sync { () -> [(String, Double, Double, UInt64, UInt64, UInt64, UInt64)]? in
+                guard let c = Self._weeklyCache, Date().timeIntervalSince(c.timestamp) < Self.cacheTTL else { return nil }
+                return c.data
+            }
+            if let cached {
+                self.weeklySummary = cached
+                return
+            }
+            let data = await Task.detached(priority: .userInitiated) {
+                DatabaseManager.shared?.weeklyTrafficSummary(weeks: 4) ?? []
+            }.value
+            Self.cacheQueue.sync { Self._weeklyCache = (Date(), data) }
+            self.weeklySummary = data
+        }
+    }
 }
+
+private extension Array where Element == Double {
+    var average: Double { isEmpty ? 0 : reduce(0, +) / Double(count) }
+}
+
+// MARK: - Export Data Sheet
+// MARK: - Permissions View
