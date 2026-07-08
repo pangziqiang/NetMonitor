@@ -98,6 +98,7 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
+        .background(theme.appBg)
     }
 
     private var settingsTabBar: some View {

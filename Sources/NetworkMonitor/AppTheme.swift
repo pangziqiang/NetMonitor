@@ -14,7 +14,7 @@ struct ThemeColors {
     let tableRowAlt: Color
 
     static let dark = ThemeColors(
-        appBg: Color(red: 0x0f / 255, green: 0x0f / 255, blue: 0x23 / 255),
+        appBg: Color(red: 0x1a / 255, green: 0x1a / 255, blue: 0x1e / 255),
         cardBg: Color.white.opacity(0.06),
         cardBorder: Color.white.opacity(0.08),
         textPrimary: Color(red: 0xe2 / 255, green: 0xe8 / 255, blue: 0xf0 / 255),

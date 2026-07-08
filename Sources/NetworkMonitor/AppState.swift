@@ -14,9 +14,19 @@ enum SystemGraphType: String {
 
 @MainActor
 class AppState: ObservableObject {
+    private let defaults = UserDefaults.standard
+
     @Published var graphType: GraphType = .down
     @Published var systemGraphType: SystemGraphType = .cpu
     @Published var settingsTab: SettingsTab = .general
-    @Published var historySeconds = 120
     @Published var databaseAvailable = true
+
+    @Published var historySeconds: Int = 120 {
+        didSet { defaults.set(historySeconds, forKey: "historySeconds") }
+    }
+
+    init() {
+        let saved = defaults.integer(forKey: "historySeconds")
+        historySeconds = saved > 0 ? saved : 120
+    }
 }

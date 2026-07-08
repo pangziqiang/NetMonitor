@@ -34,7 +34,7 @@ struct MenuBarPopover: View {
         }
         .padding(.vertical, Spacing.sm)
         .frame(minWidth: 380, maxWidth: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(theme.appBg)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             GeometryReader { proxy in

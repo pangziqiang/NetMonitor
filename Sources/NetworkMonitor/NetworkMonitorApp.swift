@@ -197,9 +197,10 @@ struct NetworkMonitorApp: App {
             TrafficStatsView(engine: appDelegate.engine, settings: appDelegate.settings)
                 .environmentObject(appDelegate.appState)
                 .environmentObject(appDelegate.settings)
+                .frame(width: 1320)
         }
         .defaultSize(width: 1320, height: 600)
-        .windowResizability(.contentMinSize)
+        .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
     }
 }

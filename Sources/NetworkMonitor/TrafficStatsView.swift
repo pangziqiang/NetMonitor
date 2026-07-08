@@ -41,7 +41,7 @@ struct TrafficStatsView: View {
             scrollContent
         }
         .frame(minWidth: cfg.pW, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
-        .background(Color(red: 0x1a / 255, green: 0x1a / 255, blue: 0x1e / 255))
+        .background(theme.appBg)
         .onAppear {
             loadAvailableDates()
             loadData()
