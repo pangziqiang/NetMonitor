@@ -122,19 +122,6 @@ struct NetworkMonitorApp: App {
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
 
-        Window(L10n.tr("Traffic Stats"), id: "trafficStats") {
-            HistoryView()
-                .environmentObject(appDelegate.appState)
-                .environmentObject(appDelegate.settings)
-                .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openTrafficStatsNotification)) { _ in
-                    openWindow(id: "trafficStats")
-                    NSApp.activate()
-                }
-        }
-        .defaultSize(width: 1000, height: 900)
-        .windowResizability(.contentSize)
-        .windowStyle(.hiddenTitleBar)
-
         .commands {
             CommandMenu(L10n.tr("NetMonitor")) {
                 Button(L10n.tr("Toggle Popover")) { appDelegate.statusItemManager?.togglePopover(nil) }
@@ -201,5 +188,14 @@ struct NetworkMonitorApp: App {
                 .environmentObject(appDelegate.appState).environmentObject(appDelegate.settings)
         }
         .defaultSize(width: 600, height: 520).windowResizability(.contentMinSize).windowStyle(.hiddenTitleBar)
+
+        Window(L10n.tr("Traffic Statistics"), id: "trafficStats") {
+            TrafficStatsView(engine: appDelegate.engine, settings: appDelegate.settings)
+                .environmentObject(appDelegate.appState)
+                .environmentObject(appDelegate.settings)
+        }
+        .defaultSize(width: 1320, height: 600)
+        .windowResizability(.contentMinSize)
+        .windowStyle(.hiddenTitleBar)
     }
 }

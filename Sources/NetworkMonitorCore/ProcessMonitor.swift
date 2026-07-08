@@ -177,19 +177,7 @@ public class ProcessMonitor: ObservableObject {
 
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard let output = String(data: data, encoding: .utf8) else { return nil }
-
-        var result: [Int32: (download: UInt64, upload: UInt64)] = [:]
-        output.enumerateLines { line, _ in
-            guard !line.hasPrefix("#") else { return }
-            let parts = line.split(separator: ",")
-            guard parts.count >= 3 else { return }
-            let namePid = parts[0].split(separator: ".")
-            guard let pidStr = namePid.last, let pid = Int32(pidStr),
-                  let download = UInt64(parts[1]),
-                  let upload = UInt64(parts[2]) else { return }
-            result[pid] = (download, upload)
-        }
-        return result
+        return Self.parseNettopOutput(output)
     }
 
     public func stop() {
@@ -225,6 +213,24 @@ public class ProcessMonitor: ObservableObject {
         let ret = proc_pidinfo(pid, Int32(PROC_PIDTASKINFO), 0, &info, size)
         guard ret == size else { return nil }
         return info
+    }
+
+    /// Parses nettop CSV output into per-PID download/upload byte counts.
+    /// Expects lines like: `Safari.12345,123456,7890`
+    /// Lines starting with `#` are treated as comments and skipped.
+    internal static func parseNettopOutput(_ output: String) -> [Int32: (download: UInt64, upload: UInt64)] {
+        var result: [Int32: (download: UInt64, upload: UInt64)] = [:]
+        output.enumerateLines { line, _ in
+            guard !line.hasPrefix("#") else { return }
+            let parts = line.split(separator: ",")
+            guard parts.count >= 3 else { return }
+            let namePid = parts[0].split(separator: ".")
+            guard let pidStr = namePid.last, let pid = Int32(pidStr),
+                  let download = UInt64(parts[1]),
+                  let upload = UInt64(parts[2]) else { return }
+            result[pid] = (download, upload)
+        }
+        return result
     }
 }
 

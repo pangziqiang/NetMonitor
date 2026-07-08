@@ -180,7 +180,16 @@ public enum L10n {
         "Week": "周",
         "Traffic Stats": "流量统计",
         "Traffic Stats…": "流量统计…",
+        "Download Traffic": "下载流量",
+        "Upload Traffic": "上传流量",
         "Double-click floating window": "双击浮窗",
         "Open Settings": "打开设置",
+        "Activity Monitor": "活动监视器",
+        "7 days": "7 天",
+        "30 days": "30 天",
+        "All": "全部",
+        "This Week": "本周",
+        "This Month": "本月",
+        "All Data": "全部数据",
     ]
 }

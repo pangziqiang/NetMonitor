@@ -4,9 +4,17 @@ import Foundation
 import AppKit
 
 enum ExportTimeRange: String, CaseIterable {
-    case week7 = "7 天"
-    case month30 = "30 天"
-    case all = "全部"
+    case week7
+    case month30
+    case all
+
+    var displayName: String {
+        switch self {
+        case .week7: return L10n.tr("7 days")
+        case .month30: return L10n.tr("30 days")
+        case .all: return L10n.tr("All")
+        }
+    }
 }
 
 enum ExportFileFormat: String, CaseIterable {
@@ -31,7 +39,7 @@ struct ExportDataSheet: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(L10n.tr("Time Range")).font(.system(size: 12, weight: .medium)).foregroundColor(theme.textMuted)
                 Picker("", selection: $timeRange) {
-                    ForEach(ExportTimeRange.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(ExportTimeRange.allCases, id: \.self) { Text($0.displayName).tag($0) }
                 }
                 .pickerStyle(.segmented)
             }
@@ -147,7 +155,7 @@ struct ExportDataSheet: View {
             await MainActor.run {
                 exporting = false
                 isPresented = false
-                LogService.log(.userAction, event: "data_exported", detail: "range=\(range.rawValue),format=\(fmt.rawValue)")
+                LogService.log(.userAction, event: "data_exported", detail: "range=\(range.displayName),format=\(fmt.rawValue)")
                 NSWorkspace.shared.selectFile(zipPath, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
             }
         }

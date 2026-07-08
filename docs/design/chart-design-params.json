@@ -1,0 +1,81 @@
+{
+  "version": "1.0",
+  "description": "NetworkMonitor 图表设计参数 — 可1:1还原",
+  "config": {
+    "barGap": 16,
+    "barOff": 10,
+    "barR": 2,
+    "barW": 38,
+    "cH": 200,
+    "statsH": 60,
+    "showY": false,
+    "yW": 48,
+    "yTicks": 5,
+    "ghO": 6,
+    "xS1": 12,
+    "xPad": 5,
+    "autoFS": false,
+    "fsMax": 12,
+    "manFS": 12,
+    "vg": 2,
+    "pW": 1320,
+    "xS2": 9,
+    "xGap": 3
+  },
+  "css": "*{margin:0;padding:0;box-sizing:border-box}\nbody{background:#1a1a1e;color:#e0e0e0;font-family:-apple-system,sans-serif}\n.bar-slot{position:relative}\n.bar-slot .tip{display:none;position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#222;color:#eee;font-size:10px;padding:3px 6px;border-radius:4px;white-space:nowrap;pointer-events:none;z-index:10}\n.bar-slot:hover .tip{display:block}\n.layout{display:flex;height:100vh}\n.view{flex:1;overflow-y:auto;padding:20px}\n.page{margin-bottom:40px}\n.pg-title{font-size:13px;color:#666;margin-bottom:8px}\n.stats{display:flex;gap:20px;padding:10px 14px;background:rgba(255,255,255,.03);border-radius:8px;margin-bottom:10px}\n.stats .lbl{font-size:10px;color:#888}\n.stats .val{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}\n.stats .val.d{color:#34d399}.stats .val.u{color:#9d78fc}\n.chart{background:rgba(255,255,255,.03);border-radius:8px;padding:12px;margin-bottom:8px;overflow:hidden}\n.chart-name{font-size:11px;font-weight:600;color:#888;margin-bottom:6px}\n.chart-body{display:flex}\n.yaxis{flex-shrink:0;display:flex;flex-direction:column;justify-content:space-between}\n.yaxis span{font-size:9px;color:rgba(255,255,255,.3);text-align:right;font-variant-numeric:tabular-nums}\n.plot{flex:1;display:flex;flex-direction:column;min-width:0}\n.plot-area{position:relative;border-left:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);overflow:hidden}\n.grid-h{position:absolute;left:0;right:0;border-top:1px dashed rgba(255,255,255,.06)}\n.gvl{position:absolute;top:0;bottom:0;border-left:1px dashed rgba(255,255,255,.05)}\n.bars{display:flex;align-items:flex-end;position:absolute;inset:0}\n.bar-slot{flex:1;display:flex;flex-direction:column;align-items:center;min-width:0}\n.bar-top{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;width:100%}\n.bar-rect{width:100%;border-radius:3px 3px 0 0}\n.bar-val{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}\n.bar-rect.d{background:#34d399}.bar-rect.u{background:#9d78fc}.bar-rect.e{background:rgba(255,255,255,.04)}",
+  "htmlStructure": {
+    "page": "<div class=\"page\" style=\"width:{pW}px\"><div class=\"pg-title\">{title} — {barCount}根柱子</div>{stats}{charts}</div>",
+    "stats": "<div class=\"stats\" style=\"min-height:{statsH}px\">{statItems}</div>",
+    "statItem": "<div><div class=\"lbl\">{label}</div><div class=\"val {color}\">{value}</div></div>",
+    "chart": "<div class=\"chart\"><div class=\"chart-name\">{label}</div><div class=\"chart-body\">{yaxis}<div class=\"plot\">{plotArea}{xlabels}</div></div></div>",
+    "plotArea": "<div class=\"plot-area\" style=\"height:{cH}px\">{grid}{bars}</div>",
+    "bars": "<div class=\"bars\" style=\"padding-left:{barOff}px\">{barSlots}</div>",
+    "barSlot": "<div class=\"bar-slot\" style=\"margin-right:{barGap}px\"><div class=\"tip\">{label} {value}</div><div class=\"bar-top\" style=\"height:{cH}px\">{valLabel}<div class=\"bar-rect {color}\" style=\"height:{hPx}px;border-radius:{barR}px {barR}px 0 0\"></div></div></div>",
+    "xlabels": "<div class=\"xlabels\" style=\"display:flex;padding-left:{barOff}px\">{labels}</div>",
+    "xlabel": "<div style=\"flex:1;margin-right:{barGap}px;text-align:center\"><div style=\"font-size:{xS1}px;color:rgba(255,255,255,{opacity})\">{primary}</div><div style=\"font-size:{xS2}px;color:rgba(255,255,255,{opacity2})\">{secondary}</div></div>",
+    "yaxis": "<div class=\"yaxis\" style=\"width:{yW}px;height:{cH}px;padding-right:4px\">{ticks}</div>",
+    "yaxisTick": "<span style=\"display:flex;align-items:flex-start;justify-content:flex-end\">{value}</span>",
+    "gridH": "<div class=\"grid-h\" style=\"top:{pct}%\"></div>",
+    "gridV": "<div class=\"gvl\" style=\"left:{x}px\"></div>"
+  },
+  "algorithms": {
+    "niceMax": "function niceMax(arr){\n  const p=Math.max(...arr,1)*1.2;\n  const m=Math.pow(10,Math.floor(Math.log10(p)));\n  const n=p/m;\n  return(n<=1?1:n<=2?2:n<=5?5:10)*m\n}",
+    "autoFontSize": "// 基于实际柱宽计算字号\nconst fontSize=Math.max(8,Math.min(fsMax,Math.round(barWidth*0.4)))",
+    "futureBar": "// 未来柱子样式\nheight:3px (固定)\nbackground:rgba(255,255,255,0.04) (灰色)\nvalueLabel:隐藏\nxLabelOpacity:0.2/0.1",
+    "yaxisScale": "// Y轴刻度分布\n共yTicks个标签，从max到0均匀分布\n标签值 = max * (yTicks-1-i) / (yTicks-1)",
+    "barWidth": "// 柱宽计算\nplotWidth = pageWidth - (showY ? yAxisWidth+4 : 0) - barOffset\nbarWidth = (plotWidth - barGap*(barCount-1)) / barCount",
+    "formatBytes": "function fmt(b){\n  if(b===0) return '0';\n  if(b<1024) return b+'B';\n  if(b<1048576) return (b/1024).toFixed(0)+'KB';\n  if(b<1073741824) return (b/1048576).toFixed(1)+'MB';\n  return (b/1073741824).toFixed(2)+'GB'\n}",
+    "formatSpeed": "function fmtS(b){\n  if(b<=0) return '0 KB/s';\n  const kb=b/1024;\n  if(kb<1024) return kb.toFixed(0)+'KB/s';\n  return (kb/1024).toFixed(1)+'MB/s'\n}"
+  },
+  "dataFormat": {
+    "description": "每页数据结构",
+    "fields": {
+      "dn": "number[] — 下载流量数组(bytes)",
+      "up": "number[] — 上传流量数组(bytes)",
+      "l1": "string[] — 主标签数组",
+      "l2": "string[] — 副标签数组(可为空字符串)",
+      "fut": "(index:number)=>boolean — 判断是否为未来柱子",
+      "t": "string — 页面标题",
+      "s1": "number — 总下载(bytes)",
+      "s2": "number — 总上传(bytes)",
+      "a1": "number — 平均下载速度(bytes/s)",
+      "a2": "number — 平均上传速度(bytes/s)"
+    }
+  },
+  "colorValues": {
+    "download": "#34d399",
+    "upload": "#9d78fc",
+    "future": "rgba(255,255,255,0.04)",
+    "background": "#1a1a1e",
+    "panel": "#111111",
+    "statsBg": "rgba(255,255,255,0.03)",
+    "chartBg": "rgba(255,255,255,0.03)",
+    "gridH": "rgba(255,255,255,0.06)",
+    "gridV": "rgba(255,255,255,0.05)",
+    "axisLine": "rgba(255,255,255,0.08)",
+    "labelPrimary": "rgba(255,255,255,0.5)",
+    "labelSecondary": "rgba(255,255,255,0.25)",
+    "yaxisLabel": "rgba(255,255,255,0.3)",
+    "tipBg": "#222222"
+  }
+}

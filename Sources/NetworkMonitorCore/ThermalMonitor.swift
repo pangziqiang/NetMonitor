@@ -182,17 +182,20 @@ public class ThermalMonitor: ObservableObject {
 
     public func refresh(cpuUsage: Double, gpuUsage: Double, readGPU: Bool = true) -> (cpu: Double?, gpu: Double?, mem: Double?) {
         smcLock.lock()
-        let isConnected = connected
-        if !isConnected && connectAttempts < maxConnectAttempts && Date().timeIntervalSince(lastConnectAttempt) > connectBackoff {
+
+        // Reconnect if needed (backoff-gated)
+        if !connected && connectAttempts < maxConnectAttempts && Date().timeIntervalSince(lastConnectAttempt) > connectBackoff {
             lastConnectAttempt = Date()
             connectAttempts += 1
+            // connect() manages its own lock; unlock first to avoid deadlock
             smcLock.unlock()
             connect()
             smcLock.lock()
         }
 
+        // Read SMC under lock to prevent disconnect() from closing conn concurrently.
+        // SMC reads are microsecond-scale; holding the lock is safe.
         if connected {
-            // SMC rotation: only read 1 temperature per tick
             switch smcRotationIndex % 3 {
             case 0: lastCPUTemp = readFromKeys(cpuKeys)
             case 1: if readGPU { lastGPUTemp = readFromKeys(gpuKeys) }
@@ -202,7 +205,6 @@ public class ThermalMonitor: ObservableObject {
             smcRotationIndex += 1
         }
 
-        // Fallback estimates (diminishing-returns curve: high load produces proportionally less delta)
         estimatedCPUTemp = 32.0 + cpuUsage * 0.55
         estimatedGPUTemp = 33.0 + gpuUsage * 0.45
         estimatedMemTemp = 32.0 + cpuUsage * 0.15

@@ -79,4 +79,111 @@ struct DatabaseManagerTests {
         #expect(today.down == 200)
         #expect(today.up == 100)
     }
+
+    // MARK: - Export Tests
+
+    @Test func exportDailyCSVContainsBOM() throws {
+        let db = try DatabaseManager(path: ":memory:")
+        db.accumulateTraffic(down: 1024, up: 512)
+        let now = Date()
+        let from = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        let csv = db.exportDailyCSV(from: from, to: now)
+        #expect(csv.hasPrefix("\u{FEFF}"))
+        #expect(csv.contains("日期"))
+        #expect(csv.contains("下载(字节)"))
+    }
+
+    @Test func exportDailyCSVContainsData() throws {
+        let db = try DatabaseManager(path: ":memory:")
+        db.accumulateTraffic(down: 1024, up: 512)
+        let now = Date()
+        let from = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        let csv = db.exportDailyCSV(from: from, to: now)
+        #expect(csv.contains("1024"))
+        #expect(csv.contains("512"))
+    }
+
+    @Test func exportDailyCSVEmpty() throws {
+        let db = try DatabaseManager(path: ":memory:")
+        let now = Date()
+        let from = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        let csv = db.exportDailyCSV(from: from, to: now)
+        // Should still have header even with no data
+        #expect(csv.contains("日期"))
+        let lines = csv.split(separator: "\n")
+        #expect(lines.count == 1) // header only
+    }
+
+    @Test func exportDailyJSONContainsData() throws {
+        let db = try DatabaseManager(path: ":memory:")
+        db.accumulateTraffic(down: 2048, up: 1024)
+        let now = Date()
+        let from = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        let json = db.exportDailyJSON(from: from, to: now)
+        #expect(json.contains("2048"))
+        #expect(json.contains("1024"))
+        #expect(json.contains("date"))
+        #expect(json.contains("down"))
+    }
+
+    @Test func exportDailyJSONEmpty() throws {
+        let db = try DatabaseManager(path: ":memory:")
+        let now = Date()
+        let from = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        let json = db.exportDailyJSON(from: from, to: now)
+        // Verify it parses as an empty JSON array
+        let data = json.data(using: .utf8)!
+        let parsed = try JSONSerialization.jsonObject(with: data) as? [Any]
+        #expect(parsed?.isEmpty == true)
+    }
+
+    @Test func exportMinutelyCSVEmpty() throws {
+        let db = try DatabaseManager(path: ":memory:")
+        let now = Date()
+        let from = Calendar.current.date(byAdding: .hour, value: -1, to: now)!
+        let csv = db.exportMinutelyCSV(from: from, to: now)
+        #expect(csv.hasPrefix("\u{FEFF}"))
+        #expect(csv.contains("时间"))
+        let lines = csv.split(separator: "\n")
+        #expect(lines.count == 1) // header only
+    }
+
+    @Test func exportMinutelyJSONEmpty() throws {
+        let db = try DatabaseManager(path: ":memory:")
+        let now = Date()
+        let from = Calendar.current.date(byAdding: .hour, value: -1, to: now)!
+        let json = db.exportMinutelyJSON(from: from, to: now)
+        let data = json.data(using: .utf8)!
+        let parsed = try JSONSerialization.jsonObject(with: data) as? [Any]
+        #expect(parsed?.isEmpty == true)
+    }
+
+    // MARK: - Range Query Tests
+
+    @Test func dailyTrafficRangeQuery() throws {
+        let db = try DatabaseManager(path: ":memory:")
+        db.accumulateTraffic(down: 100, up: 50)
+        let now = Date()
+        let from = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        let result = db.dailyTraffic(from: from, to: now)
+        #expect(result.count == 1)
+        #expect(result[0].down == 100)
+        #expect(result[0].up == 50)
+    }
+
+    @Test func dailyTrafficRangeQueryEmpty() throws {
+        let db = try DatabaseManager(path: ":memory:")
+        let now = Date()
+        let from = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        let result = db.dailyTraffic(from: from, to: now)
+        #expect(result.isEmpty)
+    }
+
+    @Test func minutelyTrafficRangeQueryEmpty() throws {
+        let db = try DatabaseManager(path: ":memory:")
+        let now = Date()
+        let from = Calendar.current.date(byAdding: .hour, value: -1, to: now)!
+        let result = db.minutelyTraffic(from: from, to: now)
+        #expect(result.isEmpty)
+    }
 }

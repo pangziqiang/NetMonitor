@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>图表调节器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a1e;color:#e0e0e0;font-family:-apple-system,sans-serif}
+.bar-slot{position:relative}
+.bar-slot .tip{display:none;position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#222;color:#eee;font-size:10px;padding:3px 6px;border-radius:4px;white-space:nowrap;pointer-events:none;z-index:10}
+.bar-slot:hover .tip{display:block}
+.layout{display:flex;height:100vh}
+.panel{width:320px;flex-shrink:0;background:#111;border-right:1px solid #333;padding:16px;overflow-y:auto;font-size:11px}
+.panel h2{color:#34d399;font-size:14px;margin-bottom:12px}
+.panel h3{color:#666;font-size:10px;margin:12px 0 4px;border-top:1px solid #222;padding-top:8px;text-transform:uppercase}
+.row{display:flex;align-items:center;margin-bottom:4px}
+.row label{width:100px;color:#aaa;flex-shrink:0}
+.row input[type=range]{flex:1;margin:0 4px;accent-color:#34d399}
+.row .val{width:40px;text-align:right;color:#34d399;border:none;background:transparent;font-size:11px;font-variant-numeric:tabular-nums;font-family:inherit;outline:none}
+.row .val:focus{background:rgba(52,211,153,.15);border-radius:3px}
+.row input[type=checkbox]{accent-color:#34d399;margin-right:6px}
+.btns{margin-top:12px;display:flex;gap:8px}
+.btns button{flex:1;padding:7px;border:none;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600}
+.btns .save{background:rgba(52,211,153,.2);color:#34d399}
+.btns .export{background:rgba(157,120,252,.2);color:#9d78fc}
+.btns .rst{background:#222;color:#888}
+.msg{margin-top:6px;padding:6px;background:rgba(52,211,153,.1);border-radius:4px;color:#34d399;display:none;font-size:10px}
+#cfg{margin-top:6px;font-size:9px;color:#444;white-space:pre-wrap;max-height:150px;overflow-y:auto}
+
+.view{flex:1;overflow-y:auto;padding:20px}
+.page{margin-bottom:40px}
+.pg-title{font-size:13px;color:#666;margin-bottom:8px}
+.stats{display:flex;gap:20px;padding:10px 14px;background:rgba(255,255,255,.03);border-radius:8px;margin-bottom:10px}
+.stats .lbl{font-size:10px;color:#888}
+.stats .val{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+.stats .val.d{color:#34d399}.stats .val.u{color:#9d78fc}
+.chart{background:rgba(255,255,255,.03);border-radius:8px;padding:12px;margin-bottom:8px;overflow:hidden}
+.chart-name{font-size:11px;font-weight:600;color:#888;margin-bottom:6px}
+.chart-body{display:flex}
+.yaxis{flex-shrink:0;display:flex;flex-direction:column;justify-content:space-between}
+.yaxis span{font-size:9px;color:rgba(255,255,255,.3);text-align:right;font-variant-numeric:tabular-nums}
+.plot{flex:1;display:flex;flex-direction:column;min-width:0}
+.plot-area{position:relative;border-left:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);overflow:hidden}
+.grid-h{position:absolute;left:0;right:0;border-top:1px dashed rgba(255,255,255,.06)}
+.bars{display:flex;align-items:flex-end;position:absolute;inset:0}
+.bar-slot{flex:1;display:flex;flex-direction:column;align-items:center;min-width:0}
+.bar-top{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;width:100%}
+.bar-rect{width:100%;border-radius:3px 3px 0 0}
+.bar-val{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bar-rect.d{background:#34d399}.bar-rect.u{background:#9d78fc}.bar-rect.e{background:rgba(255,255,255,.04)}
+
+.gvl{position:absolute;top:0;bottom:0;border-left:1px dashed rgba(255,255,255,.05)}
+</style>
+</head>
+<body>
+<div class="layout">
+<div class="panel" id="panel"></div>
+<div class="view" id="view"></div>
+</div>
+<script>
+// ===== Config =====
+const D={barGap:2,barOff:6,barR:3,barW:20,cH:160,statsH:60,showY:true,yW:48,yTicks:5,ghO:6,xS1:10,xPad:2,autoFS:true,fsMax:12,manFS:10,vg:2,pW:1000};
+let c={...D};
+
+// ===== Controls =====
+const controls=[
+  {k:'barGap',l:'柱间距',min:0,max:40},
+  {k:'barOff',l:'首柱偏移',min:0,max:30},
+  {k:'barR',l:'圆角',min:0,max:10},
+  {k:'barW',l:'柱宽',min:4,max:100},
+  {k:'cH',l:'图表高度',min:80,max:300},
+  {k:'statsH',l:'统计栏高度',min:40,max:120},
+  {k:'showY',l:'显示Y轴',type:'check'},
+  {k:'yW',l:'Y轴宽度',min:20,max:70},
+  {k:'yTicks',l:'Y轴刻度',min:3,max:8},
+  {k:'ghO',l:'垂直网格',type:'check'},
+  {k:'autoFS',l:'自动字号',type:'check'},
+  {k:'fsMax',l:'字号上限',min:8,max:18},
+  {k:'manFS',l:'手动字号',min:7,max:18},
+  {k:'vg',l:'距柱顶',min:0,max:10},
+  {k:'xS1',l:'主标签字号',min:7,max:14},
+  {k:'xPad',l:'标签距图表',min:0,max:16},
+  {k:'pW',l:'页面宽度',min:600,max:1400},
+];
+
+function buildPanel(){
+  let h='<h2>图表调节</h2>';
+  let lastGroup='';
+  for(const ctrl of controls){
+    const group=ctrl.k.startsWith('x')?'x':ctrl.k.startsWith('y')||ctrl.k==='showY'||ctrl.k==='yTicks'?'y':'';
+    if(group!==lastGroup){h+=`<h3>${group==='y'?'Y轴':group==='x'?'X轴':'柱子/图表'}</h3>`;lastGroup=group}
+    if(ctrl.type==='check'){
+      h+=`<div class="row"><label>${ctrl.l}</label><input type="checkbox" id="${ctrl.k}" ${c[ctrl.k]?'checked':''}><span class="val" id="${ctrl.k}-v">${c[ctrl.k]?'开':'关'}</span></div>`;
+    }else{
+      h+=`<div class="row"><label>${ctrl.l}</label><input type="range" id="${ctrl.k}" min="${ctrl.min}" max="${ctrl.max}" value="${c[ctrl.k]}"><input type="number" class="val" id="${ctrl.k}-v" min="${ctrl.min}" max="${ctrl.max}" value="${c[ctrl.k]}"></div>`;
+    }
+  }
+  h+=`<div class="btns"><button class="rst" onclick="resetAll()">重置</button><button class="save" onclick="saveCfg()">保存</button><button class="export" onclick="exportCfg()">导出</button></div><h3>实时信息</h3><div id="bw-info" style="margin-top:4px;font-size:11px;color:#34d399;font-variant-numeric:tabular-nums"></div><div class="msg" id="msg"></div><pre id="cfg"></pre>`;
+  document.getElementById('panel').innerHTML=h;
+  for(const ctrl of controls){
+    const e=document.getElementById(ctrl.k);if(!e)continue;
+    const v=document.getElementById(ctrl.k+'-v');
+    if(ctrl.type==='check'){
+      e.onchange=()=>{c[ctrl.k]=e.checked;if(v)v.textContent=e.checked?'开':'关';render()};
+    }else{
+      e.oninput=()=>{c[ctrl.k]=+e.value;if(v)v.value=e.value;render()};
+      if(v){
+        const applyNum=()=>{let v2=+v.value;if(isNaN(v2))v2=c[ctrl.k];v2=Math.max(ctrl.min,Math.min(ctrl.max,v2));c[ctrl.k]=v2;e.value=v2;v.value=v2;render()};
+        v.onkeydown=(ev)=>{if(ev.key==='Enter')applyNum()};
+        v.onblur=applyNum;
+      }
+    }
+  }
+}
+function resetAll(){Object.assign(c,D);buildPanel();render()}
+function saveCfg(){document.getElementById('cfg').textContent=JSON.stringify(c,null,2);document.getElementById('msg').style.display='block';document.getElementById('msg').textContent='已保存';localStorage.setItem('nm-cfg',JSON.stringify(c))}
+function exportCfg(){
+  const exp={
+    version:'1.0',
+    description:'NetworkMonitor 图表设计参数 — 可1:1还原',
+    config:{...c},
+    css:`
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a1e;color:#e0e0e0;font-family:-apple-system,sans-serif}
+.bar-slot{position:relative}
+.bar-slot .tip{display:none;position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#222;color:#eee;font-size:10px;padding:3px 6px;border-radius:4px;white-space:nowrap;pointer-events:none;z-index:10}
+.bar-slot:hover .tip{display:block}
+.layout{display:flex;height:100vh}
+.view{flex:1;overflow-y:auto;padding:20px}
+.page{margin-bottom:40px}
+.pg-title{font-size:13px;color:#666;margin-bottom:8px}
+.stats{display:flex;gap:20px;padding:10px 14px;background:rgba(255,255,255,.03);border-radius:8px;margin-bottom:10px}
+.stats .lbl{font-size:10px;color:#888}
+.stats .val{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+.stats .val.d{color:#34d399}.stats .val.u{color:#9d78fc}
+.chart{background:rgba(255,255,255,.03);border-radius:8px;padding:12px;margin-bottom:8px;overflow:hidden}
+.chart-name{font-size:11px;font-weight:600;color:#888;margin-bottom:6px}
+.chart-body{display:flex}
+.yaxis{flex-shrink:0;display:flex;flex-direction:column;justify-content:space-between}
+.yaxis span{font-size:9px;color:rgba(255,255,255,.3);text-align:right;font-variant-numeric:tabular-nums}
+.plot{flex:1;display:flex;flex-direction:column;min-width:0}
+.plot-area{position:relative;border-left:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);overflow:hidden}
+.grid-h{position:absolute;left:0;right:0;border-top:1px dashed rgba(255,255,255,.06)}
+.gvl{position:absolute;top:0;bottom:0;border-left:1px dashed rgba(255,255,255,.05)}
+.bars{display:flex;align-items:flex-end;position:absolute;inset:0}
+.bar-slot{flex:1;display:flex;flex-direction:column;align-items:center;min-width:0}
+.bar-top{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;width:100%}
+.bar-rect{width:100%;border-radius:3px 3px 0 0}
+.bar-val{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bar-rect.d{background:#34d399}.bar-rect.u{background:#9d78fc}.bar-rect.e{background:rgba(255,255,255,.04)}
+`.trim(),
+    htmlStructure:{
+      page:'<div class="page" style="width:{pW}px"><div class="pg-title">{title} — {barCount}根柱子</div>{stats}{charts}</div>',
+      stats:'<div class="stats" style="min-height:{statsH}px">{statItems}</div>',
+      statItem:'<div><div class="lbl">{label}</div><div class="val {color}">{value}</div></div>',
+      chart:'<div class="chart"><div class="chart-name">{label}</div><div class="chart-body">{yaxis}<div class="plot">{plotArea}{xlabels}</div></div></div>',
+      plotArea:'<div class="plot-area" style="height:{cH}px">{grid}{bars}</div>',
+      bars:'<div class="bars" style="padding-left:{barOff}px">{barSlots}</div>',
+      barSlot:'<div class="bar-slot" style="margin-right:{barGap}px"><div class="tip">{label} {value}</div><div class="bar-top" style="height:{cH}px">{valLabel}<div class="bar-rect {color}" style="height:{hPx}px;border-radius:{barR}px {barR}px 0 0"></div></div></div>',
+      xlabels:'<div class="xlabels" style="display:flex;padding-left:{barOff}px">{labels}</div>',
+      xlabel:'<div style="flex:1;margin-right:{barGap}px;text-align:center"><div style="font-size:{xS1}px;color:rgba(255,255,255,{opacity})">{primary}</div><div style="font-size:{xS2}px;color:rgba(255,255,255,{opacity2})">{secondary}</div></div>',
+      yaxis:'<div class="yaxis" style="width:{yW}px;height:{cH}px;padding-right:4px">{ticks}</div>',
+      yaxisTick:'<span style="display:flex;align-items:flex-start;justify-content:flex-end">{value}</span>',
+      gridH:'<div class="grid-h" style="top:{pct}%"></div>',
+      gridV:'<div class="gvl" style="left:{x}px"></div>'
+    },
+    algorithms:{
+      niceMax:`function niceMax(arr){
+  const p=Math.max(...arr,1)*1.2;
+  const m=Math.pow(10,Math.floor(Math.log10(p)));
+  const n=p/m;
+  return(n<=1?1:n<=2?2:n<=5?5:10)*m
+}`,
+      autoFontSize:`// 基于实际柱宽计算字号
+const fontSize=Math.max(8,Math.min(fsMax,Math.round(barWidth*0.4)))`,
+      futureBar:`// 未来柱子样式
+height:3px (固定)
+background:rgba(255,255,255,0.04) (灰色)
+valueLabel:隐藏
+xLabelOpacity:0.2/0.1`,
+      yaxisScale:`// Y轴刻度分布
+共yTicks个标签，从max到0均匀分布
+标签值 = max * (yTicks-1-i) / (yTicks-1)`,
+      barWidth:`// 柱宽计算
+plotWidth = pageWidth - (showY ? yAxisWidth+4 : 0) - barOffset
+barWidth = (plotWidth - barGap*(barCount-1)) / barCount`,
+      formatBytes:`function fmt(b){
+  if(b===0) return '0';
+  if(b<1024) return b+'B';
+  if(b<1048576) return (b/1024).toFixed(0)+'KB';
+  if(b<1073741824) return (b/1048576).toFixed(1)+'MB';
+  return (b/1073741824).toFixed(2)+'GB'
+}`,
+      formatSpeed:`function fmtS(b){
+  if(b<=0) return '0 KB/s';
+  const kb=b/1024;
+  if(kb<1024) return kb.toFixed(0)+'KB/s';
+  return (kb/1024).toFixed(1)+'MB/s'
+}`
+    },
+    dataFormat:{
+      description:'每页数据结构',
+      fields:{
+        dn:'number[] — 下载流量数组(bytes)',
+        up:'number[] — 上传流量数组(bytes)',
+        l1:'string[] — 主标签数组',
+        l2:'string[] — 副标签数组(可为空字符串)',
+        fut:'(index:number)=>boolean — 判断是否为未来柱子',
+        t:'string — 页面标题',
+        s1:'number — 总下载(bytes)',
+        s2:'number — 总上传(bytes)',
+        a1:'number — 平均下载速度(bytes/s)',
+        a2:'number — 平均上传速度(bytes/s)'
+      }
+    },
+    colorValues:{
+      download:'#34d399',
+      upload:'#9d78fc',
+      future:'rgba(255,255,255,0.04)',
+      background:'#1a1a1e',
+      panel:'#111111',
+      statsBg:'rgba(255,255,255,0.03)',
+      chartBg:'rgba(255,255,255,0.03)',
+      gridH:'rgba(255,255,255,0.06)',
+      gridV:'rgba(255,255,255,0.05)',
+      axisLine:'rgba(255,255,255,0.08)',
+      labelPrimary:'rgba(255,255,255,0.5)',
+      labelSecondary:'rgba(255,255,255,0.25)',
+      yaxisLabel:'rgba(255,255,255,0.3)',
+      tipBg:'#222222'
+    }
+  };
+  const json=JSON.stringify(exp,null,2);
+  document.getElementById('cfg').textContent=json;
+  document.getElementById('msg').style.display='block';
+  document.getElementById('msg').textContent='已导出完整设计参数';
+  navigator.clipboard.writeText(json).catch(()=>{});
+  const blob=new Blob([json],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='chart-design-params.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+try{const s=localStorage.getItem('nm-cfg');if(s){Object.assign(c,JSON.parse(s))}}catch(e){}
+
+// ===== Data =====
+function fmt(b){if(b===0)return'0';if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(0)+'KB';if(b<1073741824)return(b/1048576).toFixed(1)+'MB';return(b/1073741824).toFixed(2)+'GB'}
+function fmtS(b){if(b<=0)return'0 KB/s';const kb=b/1024;if(kb<1024)return kb.toFixed(0)+'KB/s';return(kb/1024).toFixed(1)+'MB/s'}
+function niceMax(a){const p=Math.max(...a,1)*1.2;const m=Math.pow(10,Math.floor(Math.log10(p)));const n=p/m;return(n<=1?1:n<=2?2:n<=5?5:10)*m}
+
+const now=new Date(),H=now.getHours(),todayD=now.getDay(),todayDate=now.getDate();
+
+// 生成有起伏的流量数据
+function genTraffic(n, minMB, maxMB, trend) {
+  const base = minMB + Math.random() * (maxMB - minMB) * 0.4;
+  const arr = [];
+  for (let i = 0; i < n; i++) {
+    let factor = 0.5 + 0.5 * Math.sin((i / n) * Math.PI * 2 + Math.random() * 0.5);
+    factor += trend ? (i / n) * trend * 0.5 : 0;
+    arr.push(Math.round((base * (0.3 + factor * 0.7)) * 1048576));
+  }
+  return arr;
+}
+
+function mkToday(){
+  const dn=genTraffic(24, 5, 80, 0.3);
+  const up=genTraffic(24, 2, 35, 0.2);
+  const s1=dn.reduce((a,b)=>a+b,0), s2=up.reduce((a,b)=>a+b,0);
+  return{dn,up,l1:Array.from({length:24},(_,i)=>String(i).padStart(2,'0')+':00'),fut:()=>false,t:'本日',s1,s2,a1:s1/86400,a2:s2/86400}
+}
+
+
+
+// ===== Data (generated once) =====
+const pages=[mkToday()];
+
+// ===== Render =====
+function render(){
+  const{barGap,barOff,barR,barW,cH,statsH,showY,yW,yTicks,xS1,xPad,autoFS,fsMax,manFS,vg,pW}=c;
+  let html='';
+
+  for(const pg of pages){
+    const{dn,up,l1,fut,t,s1,s2,a1,a2}=pg;
+    const n=dn.length;
+    const yw=showY?yW:0;
+
+    // Stats
+    html+=`<div class="page" style="width:${pW}px"><div class="pg-title">${t} — ${n}根柱子</div>`;
+    html+=`<div class="stats" style="min-height:${statsH}px"><div><div class="lbl">下载</div><div class="val d">${fmt(s1)}</div></div><div><div class="lbl">上传</div><div class="val u">${fmt(s2)}</div></div><div><div class="lbl">平均↓</div><div class="val d" style="font-size:13px">${fmtS(a1)}</div></div><div><div class="lbl">平均↑</div><div class="val u" style="font-size:13px">${fmtS(a2)}</div></div></div>`;
+
+    // Charts — share same Y-axis max for download and upload
+    const sharedMax=niceMax([...dn,...up]);
+    for(const[data,clr,label]of[[dn,'d','下载流量'],[up,'u','上传流量']]){
+      const mx=sharedMax;
+      // Y-axis
+      let ya='';
+      if(showY){for(let yt=yTicks-1;yt>=0;yt--)ya+=`<span style="display:flex;align-items:flex-start;justify-content:flex-end">${fmt(mx*yt/(yTicks-1))}</span>`}
+      // Grid horizontal
+      let gh='';for(let gt=1;gt<yTicks;gt++)gh+=`<div class="grid-h" style="top:${gt/(yTicks-1)*100}%"></div>`;
+      // Bars with inline X-axis labels
+      let bars='',xlabels='';
+      for(let i=0;i<n;i++){
+        const val=data[i];
+        const isFut=fut(i);
+        const pct=mx>0?(val/mx)*100:0;
+        const hPx=isFut?3:Math.round(pct*cH/100);
+        const l1txt=l1[i]||'';
+        bars+=`<div class="bar-slot" style="flex:0 0 ${barW}px;margin-right:${i<n-1?barGap:0}px">`+
+          `<div class="tip">${l1txt} ${fmt(val)}</div>`+
+          `<div class="bar-top" style="height:${cH}px">`+
+            (isFut?'':`<div class="bar-val" style="margin-bottom:${vg}px;font-size:${autoFS?'9':manFS}px;color:${clr==='d'?'#34d399':'#9d78fc'}">${fmt(val)}</div>`)+
+            `<div class="bar-rect ${isFut?'e':clr}" style="height:${hPx}px;border-radius:${barR}px ${barR}px 0 0"></div>`+
+          `</div>`+
+          `</div>`;
+        xlabels+=`<div class="xlbl" style="flex:0 0 ${barW}px;margin-right:${i<n-1?barGap:0}px;text-align:center">`+
+          `<div style="font-size:${xS1}px;color:rgba(255,255,255,${isFut?.2:.5});white-space:nowrap;padding-top:${xPad}px">${l1txt}</div>`+
+          `</div>`;
+      }
+      html+=`<div class="chart"><div class="chart-name">${label}</div><div class="chart-body">${showY?`<div class="yaxis" style="width:${yW}px;height:${cH}px;padding-right:4px">${ya}</div>`:''}<div class="plot"><div class="plot-area" id="pa-${clr}-${t}" style="height:${cH}px">${gh}<div class="bars" style="padding-left:${barOff}px" id="b-${clr}-${t}">${bars}</div></div><div class="xlabels" style="display:flex;padding-left:${barOff}px">${xlabels}</div></div></div></div>`;
+    }
+    html+='</div>';
+  }
+
+  document.getElementById('view').innerHTML=html;
+
+  // Update bar width info immediately
+  const bwInfo=document.getElementById('bw-info');
+  if(bwInfo)bwInfo.innerHTML=[
+    `柱宽 <b>${barW}px</b>`,
+    `间距 <b>${barGap}px</b>`,
+    `偏移 <b>${barOff}px</b>`,
+    `圆角 <b>${barR}px</b>`,
+    `高度 <b>${cH}px</b>`,
+    `统计栏 <b>${statsH}px</b>`,
+    `Y轴 <b>${showY?yW+'px':'关'}</b>`,
+    `刻度 <b>${yTicks}</b>`,
+    `网格 <b>${ghO?'开':'关'}</b>`,
+    `字号 <b>${autoFS?'自动'+fsMax:manFS}</b>`,
+    `距柱顶 <b>${vg}px</b>`,
+    `标签 <b>${xS1}px</b>`,
+    `标签距 <b>${xPad}px</b>`,
+    `页面 <b>${pW}px</b>`
+  ].join('<br>');
+
+  // Post-render: auto font size and vertical grid
+  requestAnimationFrame(()=>{
+    for(const pg of pages){
+      const{dn,up,t}=pg;
+      const n=dn.length;
+      for(const[,clr]of[[dn,'d'],[up,'u']]){
+        const barsEl=document.getElementById(`b-${clr}-${t}`);
+        if(!barsEl)continue;
+        const slots=barsEl.children;
+        if(slots.length===0)continue;
+        const areaRect=barsEl.parentElement.getBoundingClientRect();
+
+        // Auto font size based on actual bar width
+        const bw=slots[0].getBoundingClientRect().width;
+        if(autoFS){
+          const fs=Math.max(8,Math.min(fsMax,Math.round(bw*0.4)));
+          for(const s of slots){const v=s.querySelector('.bar-val');if(v)v.style.fontSize=fs+'px'}
+        }
+
+        // Vertical grid lines — centered in the gap between bars
+        const paEl=barsEl.parentElement;
+        paEl.querySelectorAll('.gvl').forEach(e=>e.remove());
+        if(c.ghO){
+          let gvl='';
+          for(let i=1;i<n;i++){
+            const r1=slots[i-1].getBoundingClientRect();
+            const r2=slots[i].getBoundingClientRect();
+            const x=(r1.right+r2.left)/2-areaRect.left;
+            gvl+=`<div class="gvl" style="left:${x}px"></div>`;
+          }
+          paEl.insertAdjacentHTML('beforeend',gvl);
+        }
+      }
+    }
+  });
+}
+
+buildPanel();
+render();
+
+</script>
+</body>
+</html>

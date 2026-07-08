@@ -68,6 +68,8 @@ NetworkMonitor/
 │   │   ├── ProcessMonitor.swift
 │   │   └── VisibilityHelper.swift
 │   └── NetworkMonitor/           ← UI 层 (SwiftUI + AppKit)
+├── docs/
+│   └── design/                   ← 设计规范文件
 └── Tests/
     └── NetworkMonitorTests/
 ```
@@ -96,6 +98,7 @@ NetworkMonitor/
 ## 功能记录
 
 - **打开活动监视器**：`MenuBarPopover.topProcessesSection` header 中 "活跃应用" 标题右侧有 `[waveform 活动监视器]` 按钮，点击通过 `NSWorkspace.shared.openApplication` 打开 `/System/Applications/Utilities/Activity Monitor.app`。按钮使用 `.downloadColor` 背景 `opacity(0.15)` + `.downloadColor` 文字，与 "按CPU/按内存" 选中态风格一致。
+- **流量统计页**：独立窗口（1320×600, `.hiddenTitleBar`），通过菜单栏 → 监控 → 流量统计（Cmd+T）或底部"流量统计"按钮打开。实现文件：`BarChartView.swift`（柱状图渲染）+ `TrafficStatsView.swift`（主视图）。只有今日视图（24根柱子），统计栏显示总下载/总上传/峰值↓/峰值↑。设计规范和原始文件见 `docs/design/` 目录。
 
 ## 已修复 Bug
 

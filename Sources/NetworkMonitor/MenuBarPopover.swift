@@ -390,7 +390,7 @@ struct MenuBarPopover: View {
             HStack(spacing: 4) {
                 Image(systemName: "waveform.path.ecg")
                     .font(.system(size: 11))
-                Text("活动监视器")
+                Text(L10n.tr("Activity Monitor"))
                     .font(.system(size: 11, weight: .medium))
             }
             .foregroundColor(.downloadColor)
