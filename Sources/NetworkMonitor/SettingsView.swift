@@ -125,9 +125,39 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Menu Bar Preview
+
+    private var menuBarPreview: some View {
+        let enabledItems = settings.menuBarOrder.filter { settings.bindingForMenuToggle($0).wrappedValue }
+        let placeholders: [String: String] = [
+            "speed": "↓ MB/s ↑ KB/s",
+            "dailyTraffic": "↓ GB ↑ MB",
+            "cpu": "-- %",
+            "gpu": "-- %",
+            "memory": "-- %"
+        ]
+        return HStack(spacing: 0) {
+            ForEach(enabledItems, id: \.self) { itemId in
+                HStack(spacing: 4) {
+                    Image(systemName: settings.menuBarItemIcon(itemId))
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.6))
+                    Text(placeholders[itemId] ?? "")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
     private var generalSettings: some View {
         VStack(spacing: Spacing.lg) {
             settingsSection(L10n.tr("Menu Bar Items"), textColor: theme.textMuted) {
+                // 预览行
+                menuBarPreview
+
                 ForEach(Array(settings.menuBarOrder.enumerated()), id: \.element) { idx, itemId in
                     HStack(spacing: 8) {
                         // Two separate sort buttons
@@ -391,29 +421,6 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L10n.tr("Export Diagnostics"))
-
-                Divider().padding(.vertical, 4)
-
-                Button {
-                    let alert = NSAlert()
-                    alert.messageText = L10n.tr("Clear DB Title")
-                    alert.informativeText = L10n.tr("Clear DB Message")
-                    alert.alertStyle = .warning
-                    alert.addButton(withTitle: L10n.tr("Clear All"))
-                    alert.addButton(withTitle: L10n.tr("Cancel"))
-                    if alert.runModal() == .alertFirstButtonReturn {
-                        DatabaseManager.shared?.clearAllTraffic()
-                    }
-                } label: {
-                    HStack {
-                        Image(systemName: "trash").font(.system(size: 12)).foregroundColor(.errorColor).frame(width: 20)
-                        Text(L10n.tr("Clear Traffic Data")).font(.system(size: 12)).foregroundColor(.errorColor)
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L10n.tr("Clear Traffic Data"))
             }
 
         }

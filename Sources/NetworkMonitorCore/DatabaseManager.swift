@@ -380,7 +380,7 @@ public class DatabaseManager {
         }
     }
 
-    private let HOURLY_RETENTION_DAYS = 90
+    private let HOURLY_RETENTION_DAYS = 730
 
     private func _retainHourly() {
         guard let db else { return }
