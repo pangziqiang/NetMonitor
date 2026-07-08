@@ -73,7 +73,7 @@ struct ChartView: NSViewRepresentable {
 // MARK: - Color & text helpers for CGContext
 
 extension Color {
-    var cg: CGColor { NSColor(self).cgColor }
+    var cg: CGColor { ns.cgColor }
     var ns: NSColor { NSColor(self) }
 }
 
@@ -144,6 +144,7 @@ struct GraphCanvas: View {
 
     var body: some View {
         let chartMax = speedChartMax(peak: data.max() ?? 0)
+        let fingerprint = data.count &* 31 &+ data.suffix(3).enumerated().reduce(0) { $0 + Int($1.element * 1000) &* (31 &+ $1.offset) }
         ChartView(
             renderer: { ctx, size, isDark in
                 let w = size.width
@@ -189,7 +190,7 @@ struct GraphCanvas: View {
                 ctx.strokePath()
                 ctx.restoreGState()
             },
-            dataFingerprint: data.count
+            dataFingerprint: fingerprint
         )
     }
 }

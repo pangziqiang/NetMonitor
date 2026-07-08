@@ -22,7 +22,7 @@ fi
 # 2. 编译检查
 echo ""
 echo "2. 编译检查..."
-if swift build 2>/dev/null; then
+if swift build; then
     echo "✅ 编译成功"
 else
     echo "❌ 编译失败"
@@ -32,7 +32,7 @@ fi
 # 3. 测试检查
 echo ""
 echo "3. 测试检查..."
-if swift test 2>/dev/null; then
+if swift test; then
     echo "✅ 测试通过"
 else
     echo "❌ 测试失败"

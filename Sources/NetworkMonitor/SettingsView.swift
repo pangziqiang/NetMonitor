@@ -71,10 +71,15 @@ struct SettingsView: View {
         let json = DatabaseManager.shared?.exportDiagnostics() ?? "{}"
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "NetMonitor-diagnostic-\(ISO8601DateFormatter().string(from: Date())).json"
+        let safeDate = safeFilenameDate()
+        panel.nameFieldStringValue = "NetMonitor-diagnostic-\(safeDate).json"
         panel.title = L10n.tr("Export Diagnostics")
         if panel.runModal() == .OK, let url = panel.url {
-            try? json.write(to: url, atomically: true, encoding: .utf8)
+            do {
+                try json.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                LogService.error("diagnostics_export_failed", detail: error.localizedDescription)
+            }
             LogService.log(.userAction, event: "diagnostics_exported")
         }
     }

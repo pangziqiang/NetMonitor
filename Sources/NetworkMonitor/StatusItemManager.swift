@@ -60,7 +60,7 @@ class StatusItemManager: NSObject {
         }
 
         let swiftUIView = StatusBarView(engine: engine, system: system, settings: settings)
-        hostingView = NSHostingView(rootView: AnyView(swiftUIView))
+        hostingView = NSHostingView(rootView: AnyView(swiftUIView.environmentObject(appState)))
         hostingView?.frame = CGRect(x: 0, y: 0, width: 1, height: 22)
         hostingView?.translatesAutoresizingMaskIntoConstraints = false
         guard let hostingView else { return }
@@ -115,9 +115,12 @@ class StatusItemManager: NSObject {
 
         // Close panel when clicking outside (unless pinned)
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak panel] _ in
-            guard let panel, panel.isVisible else { return }
-            guard !PopoverManager.shared.isPinned else { return }
-            panel.orderOut(nil)
+            guard let panel else { return }
+            DispatchQueue.main.async {
+                guard panel.isVisible else { return }
+                guard !PopoverManager.shared.isPinned else { return }
+                panel.orderOut(nil)
+            }
         }
     }
 

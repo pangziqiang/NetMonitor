@@ -25,7 +25,7 @@ struct MiniSparkLine: View {
                 renderer: { ctx, size, isDark in drawChart(ctx: ctx, size: size, isDark: isDark) },
                 hoverX: $hoverX,
                 hoverSize: $hoverSize,
-                dataFingerprint: data.count &* 31 &+ (data.last.map { Int($0 * 1000) } ?? 0),
+                dataFingerprint: data.count &* 31 &+ data.suffix(3).enumerated().reduce(0) { $0 + Int($1.element * 1000) &* (31 &+ $1.offset) },
                 hoverFingerprint: hoverX.map { Int($0 * 10) } ?? -1
             )
 
@@ -59,7 +59,12 @@ struct MiniSparkLine: View {
             }
         }
         .accessibilityLabel(L10n.tr("Data Chart"))
-        .accessibilityValue(data.last.map { formatValue?($0) ?? String(format: "%.1f", $0) } ?? L10n.tr("No Data Value"))
+        .accessibilityValue(accessibilityValueText)
+    }
+
+    private var accessibilityValueText: String {
+        guard let last = data.last else { return L10n.tr("No Data Value") }
+        return formatValue?(last) ?? String(format: "%.1f", last)
     }
 
     private func drawChart(ctx: CGContext, size: CGSize, isDark: Bool = true) {
@@ -100,9 +105,10 @@ struct MiniSparkLine: View {
             ctx.strokePath()
         }
 
+        let clampedData = data.map { min($0, maxVal) }
         ctx.saveGState()
         ctx.beginPath()
-        smoothCurvePath(ctx: ctx, data: data.map { min($0, maxVal) }, stepX: stepX, scaleY: scaleY, height: h)
+        smoothCurvePath(ctx: ctx, data: clampedData, stepX: stepX, scaleY: scaleY, height: h)
         ctx.addLine(to: CGPoint(x: stepX * CGFloat(data.count - 1), y: h))
         ctx.addLine(to: CGPoint(x: 0, y: h))
         ctx.closePath()
@@ -115,7 +121,7 @@ struct MiniSparkLine: View {
         ctx.restoreGState()
 
         ctx.beginPath()
-        smoothCurvePath(ctx: ctx, data: data.map { min($0, maxVal) }, stepX: stepX, scaleY: scaleY, height: h)
+        smoothCurvePath(ctx: ctx, data: clampedData, stepX: stepX, scaleY: scaleY, height: h)
         ctx.setStrokeColor(color.cg)
         ctx.setLineWidth(lineWidth)
         ctx.strokePath()

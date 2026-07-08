@@ -25,7 +25,12 @@ public class ProcessMonitor: ObservableObject {
     @Published public var topByCPUTotal: [ProcessSnapshot] = []
     @Published public var topByNetwork: [ProcessSnapshot] = []
     @Published public var selfInfo: ProcessSnapshot?
-    public var isActive = false
+    private let _isActiveLock = NSLock()
+    private var _isActive = false
+    public var isActive: Bool {
+        get { _isActiveLock.lock(); defer { _isActiveLock.unlock() }; return _isActive }
+        set { _isActiveLock.lock(); defer { _isActiveLock.unlock() }; _isActive = newValue }
+    }
     public var maxProcesses = 8
     public let processorCount: Int
 
@@ -187,13 +192,15 @@ public class ProcessMonitor: ObservableObject {
         topByCPU = []
         topByMemory = []
         topByCPUTotal = []
-        topByNetwork = []
         selfInfo = nil
 
         networkQueue.async { [weak self] in
             guard let self else { return }
             self.prevNetworkBytes = [:]
             self.networkHasBaseline = false
+            DispatchQueue.main.async {
+                self.topByNetwork = []
+            }
         }
     }
 

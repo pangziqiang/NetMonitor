@@ -121,12 +121,13 @@ struct TrafficStatsView: View {
 
     private func formatDateStr(_ dateStr: String) -> String {
         let todayComp = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-        let todayStr = String(format: "%04d-%02d-%02d", todayComp.year!, todayComp.month!, todayComp.day!)
+        guard let ty = todayComp.year, let tm = todayComp.month, let td = todayComp.day else { return dateStr }
+        let todayStr = String(format: "%04d-%02d-%02d", ty, tm, td)
         if dateStr == todayStr { return L10n.tr("Today") }
         guard let date = ISO8601Formatter.date(from: dateStr + "T00:00:00.000Z") else { return dateStr }
         let fmt = DateFormatter()
         fmt.dateFormat = "MM/dd (E)"
-        fmt.locale = Locale(identifier: "zh_CN")
+        fmt.locale = Locale.current
         return fmt.string(from: date)
     }
 
@@ -164,13 +165,13 @@ struct TrafficStatsView: View {
         return HStack(spacing: 20) {
             statItem(label: L10n.tr("Download"), value: barFormatBytes(page.s1), color: .downloadColor)
             statItem(label: L10n.tr("Upload"), value: barFormatBytes(page.s2), color: .uploadColor)
-            statItem(label: "峰值↓", value: barFormatBytes(peakDown), color: .downloadColor, small: true)
-            statItem(label: "峰值↑", value: barFormatBytes(peakUp), color: .uploadColor, small: true)
+            statItem(label: L10n.tr("Peak ↓"), value: barFormatBytes(peakDown), color: .downloadColor, small: true)
+            statItem(label: L10n.tr("Peak ↑"), value: barFormatBytes(peakUp), color: .uploadColor, small: true)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .frame(minHeight: cfg.statsH)
-        .background(Color.white.opacity(0.03))
+            .background(theme.textMuted.opacity(0.03))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -178,7 +179,7 @@ struct TrafficStatsView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
                 .font(.system(size: 10))
-                .foregroundColor(Color.white.opacity(0.53))
+                .foregroundColor(theme.textMuted.opacity(0.53))
             Text(value)
                 .font(.system(size: small ? 13 : 16, weight: .bold, design: .monospaced))
                 .foregroundColor(color)
@@ -198,7 +199,7 @@ struct TrafficStatsView: View {
             sharedMax: barNiceMax([page.dn, page.up].flatMap { $0 }),
             config: cfg
         )
-        .background(Color.white.opacity(0.03))
+            .background(theme.textMuted.opacity(0.03))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -209,9 +210,9 @@ struct TrafficStatsView: View {
         guard let db else { return }
         let summary = db.dailyTrafficSummary(days: 730)
 
-        // 本地今天的日期字符串
         let todayComp = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-        let todayStr = String(format: "%04d-%02d-%02d", todayComp.year!, todayComp.month!, todayComp.day!)
+        guard let ty = todayComp.year, let tm = todayComp.month, let td = todayComp.day else { return }
+        let todayStr = String(format: "%04d-%02d-%02d", ty, tm, td)
 
         // 数据库返回 UTC 日期，转换为本地日期字符串
         // UTC 的 "2026-07-05" 在 UTC+8 对应本地 "2026-07-05" 08:00 ~ "2026-07-06" 08:00
@@ -248,24 +249,28 @@ struct TrafficStatsView: View {
     private func loadDay(_ db: DatabaseManager) {
         let dateStr = selectedDateStr
 
-        // 查询范围：选中日期的本地时间 00:00 ~ 次日 00:00，转为 UTC
-        var localCal = Calendar.current
-        localCal.timeZone = TimeZone.current
         let dateParts = dateStr.split(separator: "-")
         guard dateParts.count == 3,
-              let year = Int(dateParts[0]), let month = Int(dateParts[1]), let day = Int(dateParts[2]),
-              let localDate = localCal.date(from: DateComponents(year: year, month: month, day: day)) else {
+              let year = Int(dateParts[0]), let month = Int(dateParts[1]), let day = Int(dateParts[2]) else {
+            page = nil; return
+        }
+        var localCal = Calendar.current
+        localCal.timeZone = TimeZone.current
+        guard let localDate = localCal.date(from: DateComponents(year: year, month: month, day: day)) else {
             page = nil; return
         }
         let startLocal = localCal.startOfDay(for: localDate)
-        let endLocal = localCal.date(byAdding: .day, value: 1, to: startLocal)!
+        guard let endLocal = localCal.date(byAdding: .day, value: 1, to: startLocal) else {
+            page = nil; return
+        }
 
         let records = db.hourlyTrafficRange(from: startLocal, to: endLocal)
 
         // 本地时间判断
         let nowLocal = localCal.component(.hour, from: Date())
         let todayLocal = localCal.dateComponents([.year, .month, .day], from: Date())
-        let todayStr = String(format: "%04d-%02d-%02d", todayLocal.year!, todayLocal.month!, todayLocal.day!)
+        guard let tly = todayLocal.year, let tlm = todayLocal.month, let tld = todayLocal.day else { return }
+        let todayStr = String(format: "%04d-%02d-%02d", tly, tlm, tld)
         let isToday = (dateStr == todayStr)
 
         // 按本地小时填充数据

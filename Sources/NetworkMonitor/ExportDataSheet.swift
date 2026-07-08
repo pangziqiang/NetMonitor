@@ -77,7 +77,7 @@ struct ExportDataSheet: View {
         exporting = true
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.zip]
-        panel.nameFieldStringValue = "NetMonitor-\(ISO8601DateFormatter().string(from: Date())).zip"
+        panel.nameFieldStringValue = "NetMonitor-\(safeFilenameDate()).zip"
         panel.title = L10n.tr("Export Data")
         guard panel.runModal() == .OK, let url = panel.url else { exporting = false; return }
 
@@ -88,6 +88,11 @@ struct ExportDataSheet: View {
 
         Task.detached(priority: .userInitiated) {
             let db = DatabaseManager.shared
+            guard let db else {
+                await MainActor.run { exporting = false; isPresented = false }
+                LogService.error("export_no_db", detail: "DatabaseManager.shared is nil")
+                return
+            }
             let (from, to) = Self.dateRange(for: range)
             let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             do {
@@ -100,9 +105,8 @@ struct ExportDataSheet: View {
             var files: [String] = []
 
             if wantDaily {
-                let content = fmt == .csv
-                    ? (db?.exportDailyCSV(from: from, to: to) ?? "")
-                    : (db?.exportDailyJSON(from: from, to: to) ?? "[]")
+                let content: String
+                if fmt == .csv { content = db.exportDailyCSV(from: from, to: to) } else { content = db.exportDailyJSON(from: from, to: to) }
                 let ext = fmt == .csv ? "csv" : "json"
                 let name = "daily.\(ext)"
                 do {
@@ -113,9 +117,8 @@ struct ExportDataSheet: View {
                 }
             }
             if wantMinutely {
-                let content = fmt == .csv
-                    ? (db?.exportMinutelyCSV(from: from, to: to) ?? "")
-                    : (db?.exportMinutelyJSON(from: from, to: to) ?? "[]")
+                let content: String
+                if fmt == .csv { content = db.exportMinutelyCSV(from: from, to: to) } else { content = db.exportMinutelyJSON(from: from, to: to) }
                 let ext = fmt == .csv ? "csv" : "json"
                 let name = "minutely.\(ext)"
                 do {
@@ -143,6 +146,12 @@ struct ExportDataSheet: View {
             do {
                 try process.run()
                 process.waitUntilExit()
+                guard process.terminationStatus == 0 else {
+                    LogService.error("export_zip_failed", detail: "zip exit code: \(process.terminationStatus)")
+                    try? FileManager.default.removeItem(at: tmpDir)
+                    await MainActor.run { exporting = false; isPresented = false }
+                    return
+                }
             } catch {
                 LogService.error("export_zip_failed", detail: error.localizedDescription)
                 try? FileManager.default.removeItem(at: tmpDir)

@@ -40,7 +40,7 @@ struct DualSeriesChart: View {
             }
             ZStack(alignment: .topTrailing) {
                 ChartView(renderer: drawDualChart, hoverX: $hoverX, hoverSize: $hoverSize,
-                          dataFingerprint: series1.data.count &* 31 &+ (series1.data.last.map { Int($0 * 1000) } ?? 0))
+                          dataFingerprint: series1.data.count &* 31 &+ series1.data.suffix(3).enumerated().reduce(0) { $0 + Int($1.element * 1000) &* (31 &+ $1.offset) })
                 if let hx = hoverX, let sz = hoverSize,
                    let idx = dataIndex(atX: hx, width: sz.width, count: series1.data.count) {
                     let val = series1.data[idx]
@@ -97,7 +97,8 @@ struct DualSeriesChart: View {
 
         ctx.saveGState()
         ctx.beginPath()
-        smoothCurvePath(ctx: ctx, data: series1.data.map { min($0, series1.yMax) }, stepX: stepX, scaleY: scale1, height: chartH)
+        let clampedData1 = series1.data.map { min($0, series1.yMax) }
+        smoothCurvePath(ctx: ctx, data: clampedData1, stepX: stepX, scaleY: scale1, height: chartH)
         ctx.addLine(to: CGPoint(x: stepX * CGFloat(n - 1), y: chartH))
         ctx.addLine(to: CGPoint(x: 0, y: chartH))
         ctx.closePath()
@@ -110,15 +111,16 @@ struct DualSeriesChart: View {
         ctx.restoreGState()
 
         ctx.beginPath()
-        smoothCurvePath(ctx: ctx, data: series1.data.map { min($0, series1.yMax) }, stepX: stepX, scaleY: scale1, height: chartH)
+        smoothCurvePath(ctx: ctx, data: clampedData1, stepX: stepX, scaleY: scale1, height: chartH)
         ctx.setStrokeColor(series1.color.cg)
         ctx.setLineWidth(2)
         ctx.strokePath()
 
         if let s2 = series2, s2.yMax > 0, s2.data.count == n {
             let scale2 = chartH / CGFloat(s2.yMax)
+            let clampedData2 = s2.data.map { min($0, s2.yMax) }
             ctx.beginPath()
-            smoothCurvePath(ctx: ctx, data: s2.data.map { min($0, s2.yMax) }, stepX: stepX, scaleY: scale2, height: chartH)
+            smoothCurvePath(ctx: ctx, data: clampedData2, stepX: stepX, scaleY: scale2, height: chartH)
             ctx.setStrokeColor(s2.color.cg)
             ctx.setLineWidth(1.5)
             ctx.setLineDash(phase: 0, lengths: [4, 3])

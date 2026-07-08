@@ -1,0 +1,11 @@
+bin_size=6.0
+arch=x86_64
+app_size=9
+launch_time=231
+avg_cpu=8.39
+max_cpu=33.1
+avg_mem=130
+max_mem=130
+avg_thr=8
+max_thr=8
+avg_fd=79

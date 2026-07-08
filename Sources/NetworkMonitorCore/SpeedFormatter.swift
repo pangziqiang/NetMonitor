@@ -116,3 +116,14 @@ public func currentDateStamp() -> String {
 public func currentDateStamp(from date: Date) -> String {
     threadSafeDateFormatter.string(from: date)
 }
+
+private let safeFilenameDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+    f.locale = Locale(identifier: "en_US_POSIX")
+    return f
+}()
+
+public func safeFilenameDate() -> String {
+    safeFilenameDateFormatter.string(from: Date())
+}

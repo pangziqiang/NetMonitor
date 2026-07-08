@@ -17,6 +17,15 @@ struct MenuBarPopover: View {
         case cpuTotal = "By CPU Total"
         case memory = "By Memory"
         case network = "By Network"
+
+        var label: String {
+            switch self {
+            case .cpuPerCore: return "By CPU"
+            case .cpuTotal: return "By CPU Total"
+            case .memory: return "By Memory"
+            case .network: return "By Network"
+            }
+        }
     }
     @State private var processSortMode: ProcessSortMode = .cpuPerCore
 
@@ -45,10 +54,14 @@ struct MenuBarPopover: View {
             }
         )
         .onAppear {
-            system.processMonitor.isActive = true
+            DispatchQueue.global(qos: .utility).async { [weak system] in
+                system?.processMonitor.isActive = true
+            }
         }
         .onDisappear {
-            system.processMonitor.isActive = false
+            DispatchQueue.global(qos: .utility).async { [weak system] in
+                system?.processMonitor.isActive = false
+            }
         }
         .onChange(of: settings.menuShowTopProcesses) { _, show in
             if !show { system.processMonitor.isActive = false }
@@ -403,38 +416,16 @@ struct MenuBarPopover: View {
 
     private var processSortToggle: some View {
         HStack(spacing: 0) {
-            Button(L10n.tr("By CPU")) {
-                withAnimation(.easeInOut(duration: 0.15)) { processSortMode = .cpuPerCore }
+            ForEach(ProcessSortMode.allCases, id: \.self) { mode in
+                Button(L10n.tr(mode.label)) {
+                    withAnimation(.easeInOut(duration: 0.15)) { processSortMode = mode }
+                }
+                .font(.system(size: 9, weight: .medium))
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(processSortMode == mode ? Color.downloadColor.opacity(0.15) : Color.clear)
+                .foregroundColor(processSortMode == mode ? .downloadColor : theme.textMuted.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: 3))
             }
-            .font(.system(size: 9, weight: .medium))
-            .padding(.horizontal, 5).padding(.vertical, 2)
-            .background(processSortMode == .cpuPerCore ? Color.downloadColor.opacity(0.15) : Color.clear)
-            .foregroundColor(processSortMode == .cpuPerCore ? .downloadColor : theme.textMuted.opacity(0.6))
-            .clipShape(RoundedRectangle(cornerRadius: 3))
-            Button(L10n.tr("By CPU Total")) {
-                withAnimation(.easeInOut(duration: 0.15)) { processSortMode = .cpuTotal }
-            }
-            .font(.system(size: 9, weight: .medium))
-            .padding(.horizontal, 5).padding(.vertical, 2)
-            .background(processSortMode == .cpuTotal ? Color.downloadColor.opacity(0.15) : Color.clear)
-            .foregroundColor(processSortMode == .cpuTotal ? .downloadColor : theme.textMuted.opacity(0.6))
-            .clipShape(RoundedRectangle(cornerRadius: 3))
-            Button(L10n.tr("By Memory")) {
-                withAnimation(.easeInOut(duration: 0.15)) { processSortMode = .memory }
-            }
-            .font(.system(size: 9, weight: .medium))
-            .padding(.horizontal, 5).padding(.vertical, 2)
-            .background(processSortMode == .memory ? Color.downloadColor.opacity(0.15) : Color.clear)
-            .foregroundColor(processSortMode == .memory ? .downloadColor : theme.textMuted.opacity(0.6))
-            .clipShape(RoundedRectangle(cornerRadius: 3))
-            Button(L10n.tr("By Network")) {
-                withAnimation(.easeInOut(duration: 0.15)) { processSortMode = .network }
-            }
-            .font(.system(size: 9, weight: .medium))
-            .padding(.horizontal, 5).padding(.vertical, 2)
-            .background(processSortMode == .network ? Color.downloadColor.opacity(0.15) : Color.clear)
-            .foregroundColor(processSortMode == .network ? .downloadColor : theme.textMuted.opacity(0.6))
-            .clipShape(RoundedRectangle(cornerRadius: 3))
         }
         .buttonStyle(.plain)
     }
@@ -490,10 +481,7 @@ struct MenuBarPopover: View {
 
     private func formatNetworkSpeed(_ bytesPerSec: Double, isDownload: Bool) -> String {
         let prefix = isDownload ? "↓" : "↑"
-        if bytesPerSec < 0 { return "\(prefix)0 KB/s" }
-        let kb = bytesPerSec / 1024.0
-        if kb < 1024.0 { return "\(prefix)\(String(format: "%.1f", kb)) KB/s" }
-        return "\(prefix)\(String(format: "%.1f", kb / 1024.0)) MB/s"
+        return "\(prefix)\(formatSpeed(bytesPerSec))"
     }
 
     private func selfProcessRow(_ snap: ProcessSnapshot) -> some View {

@@ -155,8 +155,9 @@ public class ThermalMonitor: ObservableObject {
 
     public func connect() {
         smcLock.lock()
-        if connected { smcLock.unlock(); disconnect(); smcLock.lock() }
+        let wasConnected = connected
         smcLock.unlock()
+        if wasConnected { disconnect() }
 
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
         guard service != 0 else {

@@ -86,12 +86,37 @@ public class DatabaseManager {
 
     deinit {
         flushTimer?.invalidate()
-        flushPendingTrafficSync()
         closed = true
+        // Drain pending traffic synchronously (outside queue to avoid deadlock)
+        _flushPendingSyncDirect()
         let dbToClose = db
         queue.async {
             if let db = dbToClose { sqlite3_close(db) }
         }
+    }
+
+    /// Flush pending traffic without going through queue.sync (used in deinit to avoid deadlock).
+    private func _flushPendingSyncDirect() {
+        accumLock.lock()
+        let down = minuteAccumDown
+        let up = minuteAccumUp
+        minuteAccumDown = 0
+        minuteAccumUp = 0
+        let now = Date()
+        accumLock.unlock()
+
+        peakLock.lock()
+        let peakD = pendingPeakDown
+        let peakU = pendingPeakUp
+        let procs = pendingProcesses
+        pendingPeakDown = 0
+        pendingPeakUp = 0
+        pendingProcesses = nil
+        peakLock.unlock()
+
+        guard down > 0 || up > 0 else { return }
+        let ts = ISO8601Formatter.string(from: now)
+        self._insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
     }
 
     private func open(path: String) throws {

@@ -94,7 +94,7 @@ struct BarChartRenderer: View {
                 Circle().fill(color).frame(width: 8, height: 8)
                 Text(color == .downloadColor ? L10n.tr("Download Traffic") : L10n.tr("Upload Traffic"))
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Color.white.opacity(0.53))
+                    .foregroundColor(theme.textSecondary.opacity(0.53))
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -117,7 +117,7 @@ struct BarChartRenderer: View {
                 let val = sharedMax * Double(config.yTicks - 1 - i) / Double(config.yTicks - 1)
                 Text(barFormatBytes(UInt64(val)))
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(Color.white.opacity(0.3))
+                    .foregroundColor(theme.textMuted.opacity(0.3))
                     .frame(height: config.cH / CGFloat(config.yTicks - 1), alignment: .top)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
@@ -132,13 +132,13 @@ struct BarChartRenderer: View {
         barsCanvas
             .overlay(
                 Rectangle()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(theme.textMuted.opacity(0.08))
                     .frame(width: 1),
                 alignment: .leading
             )
             .overlay(
                 Rectangle()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(theme.textMuted.opacity(0.08))
                     .frame(height: 1),
                 alignment: .bottom
             )
@@ -149,6 +149,8 @@ struct BarChartRenderer: View {
     private var barsCanvas: some View {
         let labelH: CGFloat = 30
         let totalH = config.cH + config.xPad + labelH
+        // Resolve colors outside Canvas for correct dark/light mode rendering
+        let labelMutedColor = NSColor(theme.textMuted)
         return Canvas { ctx, size in
             let n = data.count
             guard n > 0 else { return }
@@ -159,7 +161,7 @@ struct BarChartRenderer: View {
                 var hPath = Path()
                 hPath.move(to: CGPoint(x: 0, y: y))
                 hPath.addLine(to: CGPoint(x: size.width, y: y))
-                ctx.stroke(hPath, with: .color(Color.white.opacity(0.06)), style: StrokeStyle(lineWidth: 0.5, dash: [4, 3]))
+                ctx.stroke(hPath, with: .color(Color(NSColor(theme.textMuted.opacity(0.06)))), style: StrokeStyle(lineWidth: 0.5, dash: [4, 3]))
             }
 
             // Grid vertical (centered in gap between bars)
@@ -171,7 +173,7 @@ struct BarChartRenderer: View {
                     var vPath = Path()
                     vPath.move(to: CGPoint(x: x, y: 0))
                     vPath.addLine(to: CGPoint(x: x, y: config.cH))
-                    ctx.stroke(vPath, with: .color(Color.white.opacity(0.05)), style: StrokeStyle(lineWidth: 0.5, dash: [4, 3]))
+                    ctx.stroke(vPath, with: .color(Color(NSColor(theme.textMuted.opacity(0.05)))), style: StrokeStyle(lineWidth: 0.5, dash: [4, 3]))
                 }
             }
 
@@ -199,13 +201,13 @@ struct BarChartRenderer: View {
                 // Bar rect
                 let barRect = CGRect(x: x, y: barY, width: config.barW, height: hPx)
                 let barPath = Path(roundedRect: barRect, cornerSize: CGSize(width: config.barR, height: config.barR))
-                ctx.fill(barPath, with: .color(isFut ? Color.white.opacity(0.04) : color))
+                ctx.fill(barPath, with: .color(isFut ? Color(NSColor(theme.textMuted.opacity(0.04))) : color))
 
                 // X label (primary)
                 let labelY = config.cH + config.xPad + 8
                 let l1Text = Text(l1Safe(i))
                     .font(.system(size: config.xS1))
-                    .foregroundColor(Color.white.opacity(isFut ? 0.2 : 0.5))
+                    .foregroundColor(Color(labelMutedColor.withAlphaComponent(isFut ? 0.2 : 0.5)))
                 let l1Resolved = ctx.resolve(l1Text)
                 ctx.draw(l1Resolved, at: CGPoint(x: centerX, y: labelY), anchor: .center)
 
@@ -214,14 +216,14 @@ struct BarChartRenderer: View {
                 if !l2.isEmpty {
                     let l2Text = Text(l2)
                         .font(.system(size: config.xS2))
-                        .foregroundColor(Color.white.opacity(isFut ? 0.1 : 0.4))
+                        .foregroundColor(Color(labelMutedColor.withAlphaComponent(isFut ? 0.1 : 0.4)))
                     let l2Resolved = ctx.resolve(l2Text)
                     ctx.draw(l2Resolved, at: CGPoint(x: centerX, y: labelY + config.xS1 + config.xGap), anchor: .center)
                 }
             }
         }
         .frame(width: config.barOff * 2 + config.barW * CGFloat(data.count) + config.barGap * CGFloat(max(data.count - 1, 0)), height: totalH)
-        .background(Color.white.opacity(0.03))
+        .background(Color(NSColor(theme.textMuted.opacity(0.03))))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 

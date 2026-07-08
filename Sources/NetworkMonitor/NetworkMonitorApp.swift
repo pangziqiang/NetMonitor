@@ -76,7 +76,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if win.level != Self.settingsWindowLevel { win.level = Self.settingsWindowLevel }
     }
 
-    func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
+    func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return true }
 
     private func ensureVisibility() {
         let v = VisibilityHelper(settings: settings)

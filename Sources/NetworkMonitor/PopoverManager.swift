@@ -5,6 +5,8 @@ import Combine
 class PopoverManager: ObservableObject {
     static let shared = PopoverManager()
 
+    private init() {}
+
     private var moveObserver: NSObjectProtocol?
 
     weak var panel: NSPanel? {

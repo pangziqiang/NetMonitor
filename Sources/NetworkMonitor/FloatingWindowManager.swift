@@ -93,7 +93,7 @@ class FloatingWindowManager {
         // Calculate and resize BEFORE drawing
         let requiredSize = view.calculateRequiredSize()
         let currentFrame = panel.frame
-        if abs(currentFrame.width - requiredSize.width) > 1 || abs(currentFrame.height - requiredSize.height) > 1 {
+        if abs(currentFrame.width - requiredSize.width) > 0.5 || abs(currentFrame.height - requiredSize.height) > 0.5 {
             let newY = currentFrame.origin.y + currentFrame.height - requiredSize.height
             panel.setFrame(NSRect(x: currentFrame.origin.x, y: newY, width: requiredSize.width, height: requiredSize.height), display: true)
         }
@@ -156,9 +156,8 @@ class FloatingWindowManager {
         menu.addItem(closeItem)
         let savedLevel = panel.level
         panel.level = .floating
+        defer { panel.level = savedLevel; panel.orderFrontRegardless() }
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-        panel.level = savedLevel
-        panel.orderFrontRegardless()
     }
 
     @objc private func openSettings(_ sender: Any?) {
@@ -238,43 +237,48 @@ private class FloatingWindowView: NSView {
             parts.append("\(L10n.tr("Download")) \(formatSpeed(downSpeed, unit: displayUnit))")
             parts.append("\(L10n.tr("Upload")) \(formatSpeed(upSpeed, unit: displayUnit))")
         }
-        if showCPU { parts.append("CPU \(Int(cpuUsage))%") }
-        if showGPU { parts.append("GPU \(Int(gpuUsage))%") }
-        if showMemory { parts.append("MEM \(Int(memoryUsage))%") }
+        if showCPU { parts.append("CPU \(String(format: "%.1f", cpuUsage))%") }
+        if showGPU { parts.append("GPU \(String(format: "%.1f", gpuUsage))%") }
+        if showMemory { parts.append("MEM \(String(format: "%.1f", memoryUsage))%") }
         return parts.joined(separator: ", ")
     }
 
     override func accessibilityChildren() -> [Any]? {
         var children: [Any] = []
         let rows = buildRows()
-        for row in rows {
+        let rowHeight: CGFloat = 24
+        let padding: CGFloat = 10
+        let totalContentHeight = CGFloat(rows.count) * rowHeight
+        let startY = max(padding, (bounds.height - totalContentHeight) / 2)
+        for (i, row) in rows.enumerated() {
             let element = NSAccessibilityElement()
             element.setAccessibilityRole(.staticText)
             element.setAccessibilityLabel(row.text)
-            element.setAccessibilityFrame(convert(bounds, to: nil))
+            let rowRect = NSRect(x: 0, y: startY + CGFloat(i) * rowHeight, width: bounds.width, height: rowHeight)
+            element.setAccessibilityFrame(convert(rowRect, to: nil))
             children.append(element)
         }
         return children
     }
+
+    private static let textFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+    private static let rowHeight: CGFloat = 24
+    private static let padding: CGFloat = 10
+    private static let iconWidth: CGFloat = 36
 
     func calculateRequiredSize() -> CGSize {
         let rows = buildRows()
 
         guard !rows.isEmpty else { return CGSize(width: 160, height: 50) }
 
-        let textFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
-        let rowHeight: CGFloat = 24
-        let padding: CGFloat = 10
-        let iconWidth: CGFloat = 36
-
         var maxTextWidth: CGFloat = 0
         for row in rows {
-            let textStr = NSAttributedString(string: row.text, attributes: [.font: textFont])
+            let textStr = NSAttributedString(string: row.text, attributes: [.font: Self.textFont])
             maxTextWidth = max(maxTextWidth, textStr.size().width)
         }
 
-        let width = max(padding + iconWidth + maxTextWidth + padding, 160)
-        let height = max(padding + CGFloat(rows.count) * rowHeight + padding, 50)
+        let width = max(Self.padding + Self.iconWidth + maxTextWidth + Self.padding, 160)
+        let height = max(Self.padding + CGFloat(rows.count) * Self.rowHeight + Self.padding, 50)
         return CGSize(width: width, height: height)
     }
 
@@ -284,11 +288,7 @@ private class FloatingWindowView: NSView {
         let rows = buildRows()
         guard !rows.isEmpty else { return }
 
-        let iconFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .bold)
-        let textFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
-        let rowHeight: CGFloat = 24
-        let padding: CGFloat = 10
-        let iconWidth: CGFloat = 36
+        let iconFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
 
         // Draw dark background
         let bgRect = bounds.insetBy(dx: 2, dy: 2)
@@ -298,24 +298,24 @@ private class FloatingWindowView: NSView {
         ctx.fillPath()
 
         // Draw rows - centered vertically
-        let totalContentHeight = CGFloat(rows.count) * rowHeight
-        var y = max(padding, (bounds.height - totalContentHeight) / 2)
+        let totalContentHeight = CGFloat(rows.count) * Self.rowHeight
+        var y = max(Self.padding, (bounds.height - totalContentHeight) / 2)
 
         for row in rows {
             let iconStr = NSAttributedString(string: row.icon, attributes: [
                 .font: iconFont, .foregroundColor: row.iconColor
             ])
             let textStr = NSAttributedString(string: row.text, attributes: [
-                .font: textFont, .foregroundColor: Self.textWhite
+                .font: Self.textFont, .foregroundColor: Self.textWhite
             ])
 
             let iconSize = iconStr.size()
-            let textY = y + (rowHeight - iconSize.height) / 2
+            let textY = y + (Self.rowHeight - iconSize.height) / 2
 
-            iconStr.draw(at: NSPoint(x: padding, y: textY))
-            textStr.draw(at: NSPoint(x: padding + iconWidth, y: textY))
+            iconStr.draw(at: NSPoint(x: Self.padding, y: textY))
+            textStr.draw(at: NSPoint(x: Self.padding + Self.iconWidth, y: textY))
 
-            y += rowHeight
+            y += Self.rowHeight
         }
     }
 
@@ -334,17 +334,17 @@ private class FloatingWindowView: NSView {
 
         if showCPU {
             let tempStr = cpuTemp.map { String(format: "  %.0f°C", $0) } ?? ""
-            rows.append(("CPU", Self.cpuColor, "\(Int(cpuUsage))%" + tempStr))
+            rows.append(("CPU", Self.cpuColor, String(format: "%.1f%%", cpuUsage) + tempStr))
         }
 
         if showGPU {
             let tempStr = gpuTemp.map { String(format: "  %.0f°C", $0) } ?? ""
-            rows.append(("GPU", Self.gpuColor, "\(Int(gpuUsage))%" + tempStr))
+            rows.append(("GPU", Self.gpuColor, String(format: "%.1f%%", gpuUsage) + tempStr))
         }
 
         if showMemory {
             let tempStr = memTemp.map { String(format: "  %.0f°C", $0) } ?? ""
-            rows.append(("MEM", Self.memoryColor, "\(Int(memoryUsage))%" + tempStr))
+            rows.append(("MEM", Self.memoryColor, String(format: "%.1f%%", memoryUsage) + tempStr))
         }
 
         return rows

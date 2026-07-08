@@ -131,9 +131,9 @@ struct DatabaseManagerTests {
         let now = Date()
         let from = Calendar.current.date(byAdding: .day, value: -1, to: now)!
         let json = db.exportDailyJSON(from: from, to: now)
-        // Verify it parses as an empty JSON array
         let data = json.data(using: .utf8)!
         let parsed = try JSONSerialization.jsonObject(with: data) as? [Any]
+        #expect(parsed != nil)
         #expect(parsed?.isEmpty == true)
     }
 
@@ -155,6 +155,7 @@ struct DatabaseManagerTests {
         let json = db.exportMinutelyJSON(from: from, to: now)
         let data = json.data(using: .utf8)!
         let parsed = try JSONSerialization.jsonObject(with: data) as? [Any]
+        #expect(parsed != nil)
         #expect(parsed?.isEmpty == true)
     }
 
