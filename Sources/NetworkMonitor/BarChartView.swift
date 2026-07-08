@@ -15,7 +15,7 @@ struct BarChartConfig {
     let yW: CGFloat = 48
     let yTicks: Int = 5
     let xS1: CGFloat = 12
-    let xS2: CGFloat = 9
+    let xS2: CGFloat = 10
     let xPad: CGFloat = 5
     let xGap: CGFloat = 3
     let autoFS: Bool = false
@@ -35,6 +35,7 @@ struct BarChartPage {
     let l1: [String]
     let l2: [String]
     let fut: (Int) -> Bool
+    let hasData: (Int) -> Bool
     let title: String
     let s1: UInt64
     let s2: UInt64
@@ -78,6 +79,7 @@ struct BarChartRenderer: View {
     let labels1: [String]
     let labels2: [String]
     let isFuture: (Int) -> Bool
+    let hasData: (Int) -> Bool
     let sharedMax: Double
     let config: BarChartConfig
 
@@ -183,8 +185,8 @@ struct BarChartRenderer: View {
                 let hPx: CGFloat = isFut ? 3 : CGFloat(pct) * config.cH
                 let barY = config.cH - hPx
 
-                // Value label above bar
-                if !isFut {
+                // Value label above bar (only if has data)
+                if !isFut && hasData(i) {
                     let valStr = barFormatBytes(val)
                     let fs = config.autoFS ? max(8, min(config.fsMax, round(config.barW * 0.4))) : config.manFS
                     let text = Text(valStr)
@@ -212,7 +214,7 @@ struct BarChartRenderer: View {
                 if !l2.isEmpty {
                     let l2Text = Text(l2)
                         .font(.system(size: config.xS2))
-                        .foregroundColor(Color.white.opacity(isFut ? 0.1 : 0.25))
+                        .foregroundColor(Color.white.opacity(isFut ? 0.1 : 0.4))
                     let l2Resolved = ctx.resolve(l2Text)
                     ctx.draw(l2Resolved, at: CGPoint(x: centerX, y: labelY + config.xS1 + config.xGap), anchor: .center)
                 }

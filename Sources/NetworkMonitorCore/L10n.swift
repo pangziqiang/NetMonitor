@@ -191,5 +191,7 @@ public enum L10n {
         "This Week": "本周",
         "This Month": "本月",
         "All Data": "全部数据",
+        "Day": "日",
+        "Year": "年",
     ]
 }
