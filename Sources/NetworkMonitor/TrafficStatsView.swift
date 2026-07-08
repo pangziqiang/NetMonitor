@@ -120,7 +120,9 @@ struct TrafficStatsView: View {
     }
 
     private func formatDateStr(_ dateStr: String) -> String {
-        if dateStr == currentDateStamp() { return L10n.tr("Today") }
+        let todayComp = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        let todayStr = String(format: "%04d-%02d-%02d", todayComp.year!, todayComp.month!, todayComp.day!)
+        if dateStr == todayStr { return L10n.tr("Today") }
         guard let date = ISO8601Formatter.date(from: dateStr + "T00:00:00.000Z") else { return dateStr }
         let fmt = DateFormatter()
         fmt.dateFormat = "MM/dd (E)"
@@ -206,8 +208,16 @@ struct TrafficStatsView: View {
         let db = DatabaseManager.shared
         guard let db else { return }
         let summary = db.dailyTrafficSummary(days: 730)
-        let todayStr = currentDateStamp()
+
+        // 本地今天的日期字符串
+        let todayComp = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        let todayStr = String(format: "%04d-%02d-%02d", todayComp.year!, todayComp.month!, todayComp.day!)
+
+        // 数据库返回 UTC 日期，转换为本地日期字符串
+        // UTC 的 "2026-07-05" 在 UTC+8 对应本地 "2026-07-05" 08:00 ~ "2026-07-06" 08:00
+        // 简化处理：直接用 UTC 日期字符串作为本地日期（仅在跨日边界有1-2小时偏差）
         let dateStrs = Array(Set(summary.map { $0.date })).sorted(by: >)
+
         if dateStrs.first != todayStr {
             availableDateStrs = [todayStr] + dateStrs
         } else {
@@ -237,23 +247,33 @@ struct TrafficStatsView: View {
 
     private func loadDay(_ db: DatabaseManager) {
         let dateStr = selectedDateStr
-        guard let startUTC = ISO8601Formatter.date(from: dateStr + "T00:00:00.000Z"),
-              let endUTC = ISO8601Formatter.date(from: dateStr + "T23:00:00.000Z") else {
+
+        // 查询范围：选中日期的本地时间 00:00 ~ 次日 00:00，转为 UTC
+        var localCal = Calendar.current
+        localCal.timeZone = TimeZone.current
+        let dateParts = dateStr.split(separator: "-")
+        guard dateParts.count == 3,
+              let year = Int(dateParts[0]), let month = Int(dateParts[1]), let day = Int(dateParts[2]),
+              let localDate = localCal.date(from: DateComponents(year: year, month: month, day: day)) else {
             page = nil; return
         }
-        let records = db.hourlyTrafficRange(from: startUTC, to: endUTC)
-        let todayStr = currentDateStamp()
-        let isToday = (dateStr == todayStr)
-        // 用 UTC 当前小时，因为数据库存的是 UTC
-        let utcNow = Calendar(identifier: .gregorian).component(.hour, from: Date())
-        let nowLocal = Calendar.current.component(.hour, from: Date())
+        let startLocal = localCal.startOfDay(for: localDate)
+        let endLocal = localCal.date(byAdding: .day, value: 1, to: startLocal)!
 
+        let records = db.hourlyTrafficRange(from: startLocal, to: endLocal)
+
+        // 本地时间判断
+        let nowLocal = localCal.component(.hour, from: Date())
+        let todayLocal = localCal.dateComponents([.year, .month, .day], from: Date())
+        let todayStr = String(format: "%04d-%02d-%02d", todayLocal.year!, todayLocal.month!, todayLocal.day!)
+        let isToday = (dateStr == todayStr)
+
+        // 按本地小时填充数据
         var dn = [UInt64](repeating: 0, count: 24)
         var up = [UInt64](repeating: 0, count: 24)
         var hasDataArr = [Bool](repeating: false, count: 24)
         for r in records {
-            let utcComp = Calendar(identifier: .gregorian).dateComponents(in: TimeZone(identifier: "UTC")!, from: r.hour)
-            let h = utcComp.hour ?? 0
+            let h = localCal.component(.hour, from: r.hour)
             if h >= 0 && h < 24 {
                 dn[h] = r.totalDown
                 up[h] = r.totalUp
@@ -265,10 +285,10 @@ struct TrafficStatsView: View {
         let l2 = [String](repeating: "", count: 24)
         let s1 = dn.reduce(0, +)
         let s2 = up.reduce(0, +)
-        let hoursElapsed = isToday ? max(1, utcNow + 1) : 24
+        let hoursElapsed = isToday ? max(1, nowLocal + 1) : 24
         let a1 = Double(s1) / Double(hoursElapsed * 3600)
         let a2 = Double(s2) / Double(hoursElapsed * 3600)
-        let futureHour = isToday ? utcNow : -1
+        let futureHour = isToday ? (nowLocal - 1) : 99
 
         page = BarChartPage(
             dn: dn, up: up, l1: l1, l2: l2,
