@@ -117,6 +117,10 @@ struct NetworkMonitorApp: App {
                     openWindow(id: "settings")
                     NSApp.activate()
                 }
+                .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openTrafficStatsNotification)) { _ in
+                    openWindow(id: "trafficStats")
+                    NSApp.activate()
+                }
         }
         .defaultSize(width: 400, height: 600)
         .windowResizability(.contentSize)
