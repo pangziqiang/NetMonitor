@@ -131,39 +131,9 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Menu Bar Preview
-
-    private var menuBarPreview: some View {
-        let enabledItems = settings.menuBarOrder.filter { settings.bindingForMenuToggle($0).wrappedValue }
-        let placeholders: [String: String] = [
-            "speed": "↓ MB/s ↑ KB/s",
-            "dailyTraffic": "↓ GB ↑ MB",
-            "cpu": "-- %",
-            "gpu": "-- %",
-            "memory": "-- %"
-        ]
-        return HStack(spacing: 0) {
-            ForEach(enabledItems, id: \.self) { itemId in
-                HStack(spacing: 4) {
-                    Image(systemName: settings.menuBarItemIcon(itemId))
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.6))
-                    Text(placeholders[itemId] ?? "")
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.6))
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
-            }
-        }
-        .padding(.bottom, 4)
-    }
-
     private var generalSettings: some View {
         VStack(spacing: Spacing.lg) {
             settingsSection(L10n.tr("Menu Bar Items"), textColor: theme.textMuted) {
-                // 预览行
-                menuBarPreview
-
                 ForEach(Array(settings.menuBarOrder.enumerated()), id: \.element) { idx, itemId in
                     HStack(spacing: 8) {
                         // Two separate sort buttons
