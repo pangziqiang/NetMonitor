@@ -265,42 +265,25 @@ struct TrafficStatsView: View {
             page = nil; return
         }
 
-        let records = db.hourlyTrafficRange(from: startLocal, to: endLocal)
+        // Read all minutely data for the day and aggregate into hours
+        let minutelyData = db.minutelyTraffic(from: startLocal, to: endLocal)
+        var dn = [UInt64](repeating: 0, count: 24)
+        var up = [UInt64](repeating: 0, count: 24)
+        var hasDataArr = [Bool](repeating: false, count: 24)
+        for record in minutelyData {
+            let h = localCal.component(.hour, from: record.time)
+            if h >= 0 && h < 24 {
+                dn[h] += record.down
+                up[h] += record.up
+                hasDataArr[h] = true
+            }
+        }
 
-        // 本地时间判断
         let nowLocal = localCal.component(.hour, from: Date())
         let todayLocal = localCal.dateComponents([.year, .month, .day], from: Date())
         guard let tly = todayLocal.year, let tlm = todayLocal.month, let tld = todayLocal.day else { return }
         let todayStr = String(format: "%04d-%02d-%02d", tly, tlm, tld)
         let isToday = (dateStr == todayStr)
-
-        // 按本地小时填充数据
-        var dn = [UInt64](repeating: 0, count: 24)
-        var up = [UInt64](repeating: 0, count: 24)
-        var hasDataArr = [Bool](repeating: false, count: 24)
-        for r in records {
-            let h = localCal.component(.hour, from: r.hour)
-            if h >= 0 && h < 24 {
-                dn[h] = r.totalDown
-                up[h] = r.totalUp
-                hasDataArr[h] = true
-            }
-        }
-
-        // Add current hour's minutely data (not yet aggregated into hourly)
-        if isToday {
-            let currentHour = localCal.component(.hour, from: Date())
-            let hourStart = localCal.date(from: DateComponents(year: tly, month: tlm, day: tld, hour: currentHour))!
-            let hourEnd = localCal.date(byAdding: .hour, value: 1, to: hourStart)!
-            let minutelyData = db.minutelyTraffic(from: hourStart, to: hourEnd)
-            for record in minutelyData {
-                dn[currentHour] += record.down
-                up[currentHour] += record.up
-            }
-            if !minutelyData.isEmpty {
-                hasDataArr[currentHour] = true
-            }
-        }
 
         let l1 = (0..<24).map { String(format: "%02d:00", $0) }
         let l2 = [String](repeating: "", count: 24)
