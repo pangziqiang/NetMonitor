@@ -5,7 +5,7 @@ import os
 private let log = OSLog(subsystem: AppConstants.logSubsystem, category: "db")
 private let MINUTELY_RETENTION_DAYS = 30
 private let SECONDS_PER_DAY: TimeInterval = 86400
-private let FLUSH_INTERVAL_SECONDS: TimeInterval = 60
+private let FLUSH_INTERVAL_SECONDS: TimeInterval = 15
 
 /// Reusable SQLITE_TRANSIENT sentinel — tells SQLite to copy bound strings.
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
