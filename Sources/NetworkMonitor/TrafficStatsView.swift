@@ -280,9 +280,12 @@ struct TrafficStatsView: View {
         let todayStr = String(format: "%04d-%02d-%02d", tly, tlm, tld)
         let isToday = (dateStr == todayStr)
 
-        // Read hourly data (aggregated, more reliable) and minutely (for gap fill)
+        // Read hourly data (aggregated, more reliable) and minutely (only current hour)
         let hourlyRecords = db.hourlyTrafficRange(from: startLocal, to: endLocal)
-        let minutelyData = db.minutelyTraffic(from: startLocal, to: endLocal)
+        let currentHour = localCal.component(.hour, from: Date())
+        let currentHourStart = localCal.date(from: DateComponents(year: year, month: month, day: day, hour: currentHour))!
+        let currentHourEnd = min(Date(), endLocal)
+        let minutelyData = db.minutelyTraffic(from: currentHourStart, to: currentHourEnd)
 
         var dn = [UInt64](repeating: 0, count: 24)
         var up = [UInt64](repeating: 0, count: 24)
@@ -297,13 +300,12 @@ struct TrafficStatsView: View {
                 hasDataArr[h] = true
             }
         }
-        // Add current hour's minutely data (not yet aggregated into hourly)
-        for record in minutelyData {
-            let h = localCal.component(.hour, from: record.time)
-            if h >= 0 && h < 24 && dn[h] == 0 {
-                dn[h] += record.down
-                up[h] += record.up
-                hasDataArr[h] = true
+        // Fill current hour from minutely data (not yet in hourly)
+        if isToday {
+            for record in minutelyData {
+                dn[currentHour] += record.down
+                up[currentHour] += record.up
+                hasDataArr[currentHour] = true
             }
         }
 
@@ -406,6 +408,7 @@ struct TrafficStatsView: View {
         let summary = db.dailyTrafficSummary(days: 730)
 
         let cal = Calendar.current
+        let now = Date()
         var monthlyDict: [String: (down: UInt64, up: UInt64)] = [:]
         var monthKeysWithData = Set<String>()
         for row in summary {
@@ -415,24 +418,20 @@ struct TrafficStatsView: View {
             monthKeysWithData.insert(monthKey)
         }
 
-        // Patch current month with live minutely data
-        let todayStart = cal.startOfDay(for: Date())
-        let todayMinutely = db.minutelyTraffic(from: todayStart, to: Date())
-        var todayExtraDown: UInt64 = 0
-        var todayExtraUp: UInt64 = 0
-        for m in todayMinutely {
-            todayExtraDown += m.down
-            todayExtraUp += m.up
-        }
-        if todayExtraDown > 0 || todayExtraUp > 0 {
-            let currentMonthKey = String(ISO8601Formatter.string(from: Date()).prefix(7))
-            monthlyDict[currentMonthKey, default: (0, 0)].down += todayExtraDown
-            monthlyDict[currentMonthKey, default: (0, 0)].up += todayExtraUp
-            monthKeysWithData.insert(currentMonthKey)
+        // Patch current month with today's unaggregated traffic
+        if let currentHourStart = cal.date(from: cal.dateComponents([.year, .month, .day, .hour], from: now)) {
+            let hourMinutely = db.minutelyTraffic(from: currentHourStart, to: now)
+            var extraDown: UInt64 = 0, extraUp: UInt64 = 0
+            for m in hourMinutely { extraDown += m.down; extraUp += m.up }
+            if extraDown > 0 || extraUp > 0 {
+                let currentMonthKey = String(ISO8601Formatter.string(from: now).prefix(7))
+                monthlyDict[currentMonthKey, default: (0, 0)].down += extraDown
+                monthlyDict[currentMonthKey, default: (0, 0)].up += extraUp
+                monthKeysWithData.insert(currentMonthKey)
+            }
         }
 
         // 从当年1月开始
-        let now = Date()
         let year = cal.component(.year, from: now)
         guard let january = ISO8601Formatter.date(from: "\(year)-01-01T00:00:00.000Z") else {
             page = nil; return
