@@ -43,6 +43,7 @@ struct TrafficStatsView: View {
         .frame(minWidth: cfg.pW, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
         .background(theme.appBg)
         .onAppear {
+            DatabaseManager.shared?.flushPendingTrafficSync()
             loadAvailableDates()
             loadData()
         }
