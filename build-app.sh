@@ -83,7 +83,8 @@ echo "✅ Done: $APP_BUNDLE"
 if [ "$RUN" = true ]; then
     echo "🚀 Killing old instance..."
     killall "$APP_NAME" 2>/dev/null || true
+    pkill -f "$APP_NAME.app" 2>/dev/null || true
     sleep 0.5
     echo "🚀 Launching..."
-    open "$APP_BUNDLE"
+    open "$PROJECT_DIR/$APP_NAME.app"
 fi
