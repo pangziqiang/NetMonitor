@@ -296,8 +296,8 @@ struct TrafficStatsView: View {
 
         let l1 = (0..<24).map { String(format: "%02d:00", $0) }
         let l2 = [String](repeating: "", count: 24)
-        let s1 = dn.reduce(0, +)
-        let s2 = up.reduce(0, +)
+        let s1 = isToday ? engine.todayDown : dn.reduce(0, +)
+        let s2 = isToday ? engine.todayUp : up.reduce(0, +)
         let hoursElapsed = isToday ? max(1, nowLocal + 1) : 24
         let a1 = Double(s1) / Double(hoursElapsed * 3600)
         let a2 = Double(s2) / Double(hoursElapsed * 3600)
@@ -324,21 +324,6 @@ struct TrafficStatsView: View {
             dataByDate[row.date] = (row.totalDown, row.totalUp)
         }
 
-        // Patch today with live minutely data
-        let todayStart = cal.startOfDay(for: Date())
-        let todayMinutely = db.minutelyTraffic(from: todayStart, to: Date())
-        var todayExtraDown: UInt64 = 0
-        var todayExtraUp: UInt64 = 0
-        for m in todayMinutely {
-            todayExtraDown += m.down
-            todayExtraUp += m.up
-        }
-        if let existing = dataByDate[todayStr] {
-            dataByDate[todayStr] = (existing.down + todayExtraDown, existing.up + todayExtraUp)
-        } else if todayExtraDown > 0 || todayExtraUp > 0 {
-            dataByDate[todayStr] = (todayExtraDown, todayExtraUp)
-        }
-
         let sortedDates = dataByDate.keys.sorted()
         guard let earliestStr = sortedDates.first,
               let earliestDate = ISO8601Formatter.date(from: earliestStr + "T00:00:00.000Z") else {
@@ -359,14 +344,21 @@ struct TrafficStatsView: View {
             guard let d = cal.date(byAdding: .day, value: i, to: mondayDate) else { continue }
             let dateStr = currentDateStamp(from: d)
             let wd = cal.component(.weekday, from: d)
-            let data = dataByDate[dateStr]
-            dn.append(data?.down ?? 0)
-            up.append(data?.up ?? 0)
+            let isTodayBucket = (dateStr == todayStr)
+            if isTodayBucket {
+                dn.append(engine.todayDown)
+                up.append(engine.todayUp)
+                hasDataArr.append(true)
+            } else {
+                let data = dataByDate[dateStr]
+                dn.append(data?.down ?? 0)
+                up.append(data?.up ?? 0)
+                hasDataArr.append(data != nil)
+            }
             l1.append(weekdayNames[wd - 1])
             let parts = dateStr.split(separator: "-")
             l2.append(parts.count >= 3 ? "\(parts[1])/\(parts[2])" : "")
             dates.append(dateStr)
-            hasDataArr.append(data != nil)
         }
 
         let s1 = dn.reduce(0, +), s2 = up.reduce(0, +)
