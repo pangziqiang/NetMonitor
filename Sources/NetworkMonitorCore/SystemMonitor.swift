@@ -216,16 +216,15 @@ public class SystemMonitor: ObservableObject {
 
     private func scheduleGPURead() {
         gpuReadTask?.cancel()
-        gpuReadTask = Task.detached(priority: .utility) { [weak self] in
-            let gpu = GPUInfo.read()
-            let hasGPU = gpu != nil
-            await MainActor.run {
-                guard !Task.isCancelled else { return }
-                if let self {
-                    self.cachedGPU = gpu
-                    if hasGPU {
-                        self.gpuAvailable = true
-                    }
+        gpuReadTask = Task { [weak self] in
+            let gpu = await Task.detached(priority: .utility) {
+                GPUInfo.read()
+            }.value
+            guard !Task.isCancelled else { return }
+            if let self {
+                self.cachedGPU = gpu
+                if gpu != nil {
+                    self.gpuAvailable = true
                 }
             }
         }
