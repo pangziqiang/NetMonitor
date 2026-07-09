@@ -218,12 +218,14 @@ public class SystemMonitor: ObservableObject {
         gpuReadTask?.cancel()
         gpuReadTask = Task.detached(priority: .utility) { [weak self] in
             let gpu = GPUInfo.read()
-            let info = gpu
+            let hasGPU = gpu != nil
             await MainActor.run {
                 guard !Task.isCancelled else { return }
-                self?.cachedGPU = info
-                if info != nil {
-                    self?.gpuAvailable = true
+                if let self {
+                    self.cachedGPU = gpu
+                    if hasGPU {
+                        self.gpuAvailable = true
+                    }
                 }
             }
         }

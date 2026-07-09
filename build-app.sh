@@ -37,18 +37,16 @@ else
     swift build
 fi
 
-# Universal build via xcodebuild
-if [ "$ARCH" = "universal" ]; then
-    echo "🏗️  Building universal binary (arm64 + x86_64)..."
-    xcodebuild -scheme "$APP_NAME" -configuration Release -destination "generic/platform=macOS" ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO 2>&1 | tail -5
-    # Copy from xcodebuild output
-    XCODEBUILD_DIR="$HOME/Library/Developer/Xcode/DerivedData"
-    XCODEBUILD_OUTPUT=$(ls -td "$XCODEBUILD_DIR"/NetworkMonitor-*/Build/Products/Release/NetworkMonitor 2>/dev/null | head -1)
-    if [ -n "$XCODEBUILD_OUTPUT" ]; then
-        mkdir -p "$BUILD_DIR"
-        cp "$XCODEBUILD_OUTPUT" "$BUILD_DIR/$APP_NAME"
-        echo "✅ Universal binary copied to $BUILD_DIR"
-    fi
+# Universal build via xcodebuild (default)
+echo "🏗️  Building universal binary (arm64 + x86_64)..."
+xcodebuild -scheme "$APP_NAME" -configuration Release -destination "generic/platform=macOS" ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO 2>&1 | tail -5
+# Copy from xcodebuild output
+XCODEBUILD_DIR="$HOME/Library/Developer/Xcode/DerivedData"
+XCODEBUILD_OUTPUT=$(ls -td "$XCODEBUILD_DIR"/NetworkMonitor-*/Build/Products/Release/NetworkMonitor 2>/dev/null | head -1)
+if [ -n "$XCODEBUILD_OUTPUT" ]; then
+    mkdir -p "$BUILD_DIR"
+    cp "$XCODEBUILD_OUTPUT" "$BUILD_DIR/$APP_NAME"
+    echo "✅ Universal binary copied to $BUILD_DIR"
 fi
 
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"

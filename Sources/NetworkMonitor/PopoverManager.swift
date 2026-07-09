@@ -21,7 +21,9 @@ class PopoverManager: ObservableObject {
                 object: panel,
                 queue: .main
             ) { [weak self] _ in
-                self?.hasMoved = true
+                Task { @MainActor in
+                    self?.hasMoved = true
+                }
             }
         }
     }
