@@ -280,32 +280,17 @@ struct TrafficStatsView: View {
         let todayStr = String(format: "%04d-%02d-%02d", tly, tlm, tld)
         let isToday = (dateStr == todayStr)
 
-        // Read hourly data (aggregated, more reliable) and minutely (only current hour)
-        let hourlyRecords = db.hourlyTrafficRange(from: startLocal, to: endLocal)
-        let currentHour = localCal.component(.hour, from: Date())
-        let currentHourStart = localCal.date(from: DateComponents(year: year, month: month, day: day, hour: currentHour))!
-        let currentHourEnd = min(Date(), endLocal)
-        let minutelyData = db.minutelyTraffic(from: currentHourStart, to: currentHourEnd)
-
+        // Aggregate all minutely data into 24 hours (more complete than hourly table)
+        let minutelyData = db.minutelyTraffic(from: startLocal, to: endLocal)
         var dn = [UInt64](repeating: 0, count: 24)
         var up = [UInt64](repeating: 0, count: 24)
         var hasDataArr = [Bool](repeating: false, count: 24)
-
-        // Fill from hourly table first
-        for r in hourlyRecords {
-            let h = localCal.component(.hour, from: r.hour)
+        for record in minutelyData {
+            let h = localCal.component(.hour, from: record.time)
             if h >= 0 && h < 24 {
-                dn[h] = r.totalDown
-                up[h] = r.totalUp
+                dn[h] += record.down
+                up[h] += record.up
                 hasDataArr[h] = true
-            }
-        }
-        // Fill current hour from minutely data (not yet in hourly)
-        if isToday {
-            for record in minutelyData {
-                dn[currentHour] += record.down
-                up[currentHour] += record.up
-                hasDataArr[currentHour] = true
             }
         }
 
