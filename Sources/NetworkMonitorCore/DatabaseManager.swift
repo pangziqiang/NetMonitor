@@ -331,12 +331,10 @@ public class DatabaseManager {
         guard down > 0 || up > 0 else { return }
 
         let ts = ISO8601Formatter.string(from: now)
-        let dateStr = currentDateStamp()
 
         queue.sync {
             if closed { return }
             self._insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
-            self._updateDaily(date: dateStr, down: down, up: up)
         }
     }
 
