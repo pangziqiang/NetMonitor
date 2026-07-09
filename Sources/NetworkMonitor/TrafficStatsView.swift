@@ -30,6 +30,7 @@ struct TrafficStatsView: View {
     @State private var page: BarChartPage?
     @State private var selectedDateStr: String = ""
     @State private var availableDateStrs: [String] = []
+    @State private var refreshTimer: Timer?
 
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
     private let cfg = BarChartConfig.shared
@@ -43,9 +44,17 @@ struct TrafficStatsView: View {
         .frame(minWidth: cfg.pW, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
         .background(theme.appBg)
         .onAppear {
+            refreshTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
+                DatabaseManager.shared?.flushPendingTrafficSync()
+                loadData()
+            }
             DatabaseManager.shared?.flushPendingTrafficSync()
             loadAvailableDates()
             loadData()
+        }
+        .onDisappear {
+            refreshTimer?.invalidate()
+            refreshTimer = nil
         }
         .onChange(of: timeRange) { _, _ in loadData() }
         .onChange(of: selectedDateStr) { _, _ in if timeRange == .today { loadData() } }
