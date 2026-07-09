@@ -10,8 +10,9 @@ struct ProcessMonitorTests {
     @Test("parseNettopOutput with valid CSV lines")
     func parseNettopValidLines() {
         let output = """
-        Safari.12345,1000,500
-        Chrome.67890,2000,300
+        command,pid,rx_bytes,tx_bytes
+        Safari.12345,12345,1000,500
+        Chrome.67890,67890,2000,300
         """
         let result = ProcessMonitor.parseNettopOutput(output)
         #expect(result.count == 2)
@@ -26,7 +27,8 @@ struct ProcessMonitorTests {
         let output = """
         # time,interface,state
         # blah blah
-        Safari.12345,1000,500
+        command,pid,rx_bytes,tx_bytes
+        Safari.12345,12345,1000,500
         """
         let result = ProcessMonitor.parseNettopOutput(output)
         #expect(result.count == 1)
@@ -36,8 +38,9 @@ struct ProcessMonitorTests {
     @Test("parseNettopOutput skips lines with fewer than 3 columns")
     func parseNettopSkipsShortLines() {
         let output = """
-        Safari.12345,1000
-        Chrome.67890,2000,300
+        command,pid,rx_bytes,tx_bytes
+        Safari.12345,12345,1000
+        Chrome.67890,67890,2000,300
         """
         let result = ProcessMonitor.parseNettopOutput(output)
         #expect(result.count == 1)
@@ -64,8 +67,9 @@ struct ProcessMonitorTests {
     @Test("parseNettopOutput skips lines with invalid PID")
     func parseNettopInvalidPID() {
         let output = """
-        Safari.notapid,1000,500
-        Chrome.67890,2000,300
+        command,pid,rx_bytes,tx_bytes
+        Safari.notapid,notapid,1000,500
+        Chrome.67890,67890,2000,300
         """
         let result = ProcessMonitor.parseNettopOutput(output)
         #expect(result.count == 1)
@@ -75,8 +79,9 @@ struct ProcessMonitorTests {
     @Test("parseNettopOutput skips lines with invalid byte counts")
     func parseNettopInvalidBytes() {
         let output = """
-        Safari.12345,notanumber,500
-        Chrome.67890,2000,300
+        command,pid,rx_bytes,tx_bytes
+        Safari.12345,12345,notanumber,500
+        Chrome.67890,67890,2000,300
         """
         let result = ProcessMonitor.parseNettopOutput(output)
         #expect(result.count == 1)
@@ -86,7 +91,7 @@ struct ProcessMonitorTests {
     @Test("parseNettopOutput handles process name with dots")
     func parseNettopNameWithDots() {
         // "com.apple.Safari.12345" — split by "." gives last element as PID
-        let output = "com.apple.Safari.12345,1000,500"
+        let output = "command,pid,rx_bytes,tx_bytes\ncom.apple.Safari.12345,12345,1000,500"
         let result = ProcessMonitor.parseNettopOutput(output)
         #expect(result.count == 1)
         #expect(result[12345]?.download == 1000)
@@ -94,7 +99,7 @@ struct ProcessMonitorTests {
 
     @Test("parseNettopOutput handles zero byte counts")
     func parseNettopZeroBytes() {
-        let output = "Safari.12345,0,0"
+        let output = "command,pid,rx_bytes,tx_bytes\nSafari.12345,12345,0,0"
         let result = ProcessMonitor.parseNettopOutput(output)
         #expect(result.count == 1)
         #expect(result[12345]?.download == 0)
@@ -103,7 +108,7 @@ struct ProcessMonitorTests {
 
     @Test("parseNettopOutput handles large byte counts")
     func parseNettopLargeBytes() {
-        let output = "Safari.12345,18446744073709551615,18446744073709551615"
+        let output = "command,pid,rx_bytes,tx_bytes\nSafari.12345,12345,18446744073709551615,18446744073709551615"
         let result = ProcessMonitor.parseNettopOutput(output)
         #expect(result.count == 1)
         #expect(result[12345]?.download == UInt64.max)

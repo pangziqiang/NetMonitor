@@ -25,7 +25,7 @@ struct MiniSparkLine: View {
                 renderer: { ctx, size, isDark in drawChart(ctx: ctx, size: size, isDark: isDark) },
                 hoverX: $hoverX,
                 hoverSize: $hoverSize,
-                dataFingerprint: data.count &* 31 &+ data.suffix(3).enumerated().reduce(0) { $0 + Int($1.element * 1000) &* (31 &+ $1.offset) },
+                dataFingerprint: stableFingerprint(data),
                 hoverFingerprint: hoverX.map { Int($0 * 10) } ?? -1
             )
 

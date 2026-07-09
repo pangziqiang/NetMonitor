@@ -8,7 +8,10 @@ let package = Package(
         .target(
             name: "NetworkMonitorCore",
             path: "Sources/NetworkMonitorCore",
-            linkerSettings: [.linkedLibrary("sqlite3")]
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+                .linkedFramework("IOKit")
+            ]
         ),
         .executableTarget(
             name: "NetworkMonitor",

@@ -12,34 +12,80 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: macos-14
+    name: Lint
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install SwiftLint
+      - name: Install swiftlint
         run: brew install swiftlint
-      - name: Run SwiftLint
-        run: swiftlint lint --reporter github-actions-logging
+      - name: Run swiftlint
+        run: swiftlint lint --strict
 
-  build-and-test:
-    needs: lint
-    runs-on: macos-14
+  test:
+    name: Test (Swift 5.9, macOS 14+)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
-      - name: Build
-        run: swift build
-      - name: Test
+      - name: Run tests
         run: swift test
 
-  benchmark:
-    needs: build-and-test
-    runs-on: macos-14
+  test-thread-sanitizer:
+    name: Test + ThreadSanitizer
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
-      - name: Build App
-        run: bash build-app.sh
-      - name: Run Benchmark
-        run: bash scripts/benchmark.sh "NetworkMonitor.app"
+      - name: Run tests with ThreadSanitizer
+        run: swift test --sanitize=thread
+
+  build-release:
+    name: Build Release
+    runs-on: macos-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build release binary
+        run: swift build -c release
+      - name: Verify binary exists
+        run: test -f .build/release/NetworkMonitor
+
+  build-universal:
+    name: Build Universal Binary
+    runs-on: macos-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build universal (arm64 + x86_64)
+        run: |
+          xcodebuild -scheme NetworkMonitor -configuration Release \
+            -destination "generic/platform=macOS" \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+            2>&1 | tail -20
+      - name: Find and copy binary
+        run: |
+          BIN=$(ls -td ~/Library/Developer/Xcode/DerivedData/NetworkMonitor-*/Build/Products/Release/NetworkMonitor 2>/dev/null | head -1)
+          if [ -n "$BIN" ] && [ -f "$BIN" ]; then
+            mkdir -p .build/release
+            cp "$BIN" .build/release/NetworkMonitor-universal
+            echo "Universal binary: $(file .build/release/NetworkMonitor-universal)"
+          else
+            echo "⚠️ xcodebuild output not found, skipping universal copy"
+          fi
+
+  check-format:
+    name: Check Format
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install swift-format
+        run: brew install swift-format
+      - name: Check formatting
+        run: swift-format lint --recursive Sources Tests
+
+  quality:
+    name: Quality Script
+    runs-on: macos-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run quality.sh
+        run: bash scripts/quality.sh

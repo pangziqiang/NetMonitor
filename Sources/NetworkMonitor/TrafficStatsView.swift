@@ -2,6 +2,19 @@ import NetworkMonitorCore
 import SwiftUI
 import AppKit
 
+// Thread-safe ISO8601 helpers
+private func iso8601String(from date: Date) -> String {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f.string(from: date)
+}
+
+private func iso8601Date(from string: String) -> Date? {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f.date(from: string)
+}
+
 // MARK: - Time Range
 
 enum TrafficTimeRange: String, CaseIterable {
@@ -134,7 +147,7 @@ struct TrafficStatsView: View {
         guard let ty = todayComp.year, let tm = todayComp.month, let td = todayComp.day else { return dateStr }
         let todayStr = String(format: "%04d-%02d-%02d", ty, tm, td)
         if dateStr == todayStr { return L10n.tr("Today") }
-        guard let date = ISO8601Formatter.date(from: dateStr + "T00:00:00.000Z") else { return dateStr }
+        guard let date = iso8601Date(from: dateStr + "T00:00:00.000Z") else { return dateStr }
         let fmt = DateFormatter()
         fmt.dateFormat = "MM/dd (E)"
         fmt.locale = Locale.current
@@ -340,7 +353,7 @@ struct TrafficStatsView: View {
 
         let sortedDates = dataByDate.keys.sorted()
         guard let earliestStr = sortedDates.first,
-              let earliestDate = ISO8601Formatter.date(from: earliestStr + "T00:00:00.000Z") else {
+              let earliestDate = iso8601Date(from: earliestStr + "T00:00:00.000Z") else {
             page = nil; return
         }
 
@@ -403,29 +416,30 @@ struct TrafficStatsView: View {
             monthKeysWithData.insert(monthKey)
         }
 
-        // Patch current month with today's unaggregated traffic
+// Patch current month with today's unaggregated traffic
         if let currentHourStart = cal.date(from: cal.dateComponents([.year, .month, .day, .hour], from: now)) {
             let hourMinutely = db.minutelyTraffic(from: currentHourStart, to: now)
             var extraDown: UInt64 = 0, extraUp: UInt64 = 0
             for m in hourMinutely { extraDown += m.down; extraUp += m.up }
             if extraDown > 0 || extraUp > 0 {
-                let currentMonthKey = String(ISO8601Formatter.string(from: now).prefix(7))
+                let currentMonthKey = String(iso8601String(from: now).prefix(7))
                 monthlyDict[currentMonthKey, default: (0, 0)].down += extraDown
                 monthlyDict[currentMonthKey, default: (0, 0)].up += extraUp
                 monthKeysWithData.insert(currentMonthKey)
             }
         }
-
+        
         // 从当年1月开始
         let year = cal.component(.year, from: now)
-        guard let january = ISO8601Formatter.date(from: "\(year)-01-01T00:00:00.000Z") else {
+        let isoJan = "\(year)-01-01T00:00:00.000Z"
+        guard let january = iso8601Date(from: isoJan) else {
             page = nil; return
         }
 
         var months: [(key: String, date: Date)] = []
         for i in 0..<24 {
             guard let d = cal.date(byAdding: .month, value: i, to: january) else { continue }
-            months.append((String(ISO8601Formatter.string(from: d).prefix(7)), d))
+            months.append((String(iso8601String(from: d).prefix(7)), d))
         }
 
         let dn = months.map { monthlyDict[$0.key]?.down ?? 0 }
@@ -436,7 +450,7 @@ struct TrafficStatsView: View {
 
         let s1 = dn.reduce(0, +), s2 = up.reduce(0, +)
         let totalSec = Double(24 * 30 * 86400)
-        let currentMonthKey = String(ISO8601Formatter.string(from: now).prefix(7))
+        let currentMonthKey = String(iso8601String(from: now).prefix(7))
 
         page = BarChartPage(
             dn: dn, up: up, l1: l1, l2: l2,

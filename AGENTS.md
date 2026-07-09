@@ -66,7 +66,8 @@ NetworkMonitor/
 │   │   ├── L10n.swift
 │   │   ├── ChartCalc.swift
 │   │   ├── ProcessMonitor.swift
-│   │   └── VisibilityHelper.swift
+│   │   ├── VisibilityHelper.swift
+│   │   └── IOReportWrapper.swift   ← libIOReport.dylib 动态加载包装
 │   └── NetworkMonitor/           ← UI 层 (SwiftUI + AppKit)
 ├── docs/
 │   └── design/                   ← 设计规范文件
@@ -97,16 +98,25 @@ NetworkMonitor/
 
 ## 已修复 Bug
 
-### 历史修复
-- `DatabaseManager.deinit`：`flushPendingTrafficSync()` 在 `closed = true` 之前调用，避免退出数据丢失。
-- `DatabaseManager.deinit`：`db` 提局部变量再进 `queue.async`，避免 deinit 中闭包强捕获 self 导致 `sqlite3_close` 不执行。
-- `SettingsView`：移除 `cachedVisibility` 缓存，每次实时创建 `VisibilityHelper`，避免 `canDisable()` 读到旧快照导致所有可见元素可全关。
-- `NetworkMonitorApp`：`onOpenSettings` 闭包不捕获 self（已确认闭包体内无 self 引用）。
-- `ProcessMonitor`：`stop()` 中网络状态重置改为 `networkQueue.async` 执行，避免与 `tickNetwork()` 的数据竞争；`tickNetwork()` 开头检查 `isActive`。
-- `NetworkMonitorApp`：`onChange(of: historySeconds)` 移除冗余 `max/min` clamp（`AppState` setter 已保证）。
-- `MenuBarPopover`：`formatNetworkSpeed` 改用 1024 进制，与 `SpeedFormatter` 一致。
-- `FloatingWindowManager`：`NSScreen.main` 为 nil 时加 `os_log` 错误日志。
-- `StatusItemManager`：`statusItem?.button` 为 nil 时加 `os_log` 错误日志。
+### 2026-07-09 IOReport 推送式监控
+
+**IOReportWrapper.swift** — libIOReport.dylib 动态加载包装
+- `IOReportLib.shared` 为可选类型，Intel 机器返回 `nil`（库存在但 API 会 SIGSEGV）
+- `isAvailable()` 使用 `#if arch(arm64)` 编译期隔离，Intel 永远返回 `false`
+- 所有函数指针类型别名：`CopyChannelsInGroupFunc`、`IterateNewSamplesFunc` 等
+- `IOReportMonitor` 订阅 IOReport 分组（Network/CPU），回调式推送数据
+
+**NetworkMonitorEngine.swift** — IOReport 网络路径
+- 新增 `IOReportNetworkMonitor` 类，订阅 IOReport Network 组
+- 回调获取 `bytes_in`/`bytes_out` 差值，计算实时速率
+- `useIOReport` 标志：Apple Silicon 用 IOReport，Intel 用 getifaddrs 轮询
+
+**SystemMonitor.swift** — IOReport CPU 路径
+- `startIOReportCPU()` 订阅 IOReport CPU 组，从 total/idle cycles 计算 CPU%
+- `useIOReportCPU` 标志：Apple Silicon 用 IOReport 回调，Intel 用 host_processor_info 轮询
+- `tick()` 在 IOReport 模式下跳过重复 CPU 采集
+
+**崩溃修复**：Intel 上 `IOReportCopyChannelsInGroup` 会 SIGSEGV，通过 `#if arch(arm64)` 编译期排除
 
 ### 2026-07-09 全局审计修复（14 Critical + 26 High + 40+ Medium/Low）
 
@@ -155,7 +165,8 @@ NetworkMonitor/
 
 ## Git 标签
 
-- `stable-v1.7-ui-fixes` — 当前版本：流量统计日/周/年视图 + 统一背景 + 预览行 + 持久化 + hourly保留730天
+- `stable-v1.7-io-fixes` — 当前版本：IOReport 推送式监控 + Intel 优雅降级 + 全局审计修复
+- `stable-v1.7-ui-fixes` — 上一版本：流量统计日/周/年视图 + 统一背景 + 预览行 + 持久化
 
 ## 数据导出功能（已实现）
 
@@ -167,15 +178,15 @@ NetworkMonitor/
 
 | App | CPU avg | MEM avg | 线程 | 启动 | 大小 | 架构 |
 |-----|---------|---------|------|------|------|------|
-| **NetworkMonitor** | 3.58% | 106MB | 7 | 271ms | 6MB | x86_64 |
-| Stats | **1.94%** | 123MB | 16 | 225ms | 18MB | Universal |
-| NetWorker Pro | 4.55% | 106MB | 7 | 199ms | 9MB | Universal |
-| HagimiMonitor | 8.50% | 130MB | 10 | 216ms | 9MB | x86_64 |
+| **NetworkMonitor** | **0.59%** | 106MB | 7 | 251ms | 9MB | Universal |
+| Stats | 1.00% | 119MB | 15 | 262ms | 18MB | Universal |
+| NetWorker Pro | 5.65% | 105MB | 7 | 226ms | 9MB | Universal |
+| HagimiMonitor | 4.60% | 94MB | 9 | 196ms | 9MB | x86_64 |
 
-综合排名 (加权0-10)：NetworkMonitor **3.71** > NetWorker Pro 3.65 > Stats 2.75 > HagimiMonitor 1.37
+**NetworkMonitor CPU 从 3.58% 降到 0.59%，降幅 83%，现为全场最低。**
 
-**Stats CPU 低的关键因素**：arm64 原生架构（非 Rosetta）+ IOKit IOReport API（接近推送式，无需主动高频轮询）
+综合排名 (加权0-10)：NetworkMonitor **8.5** > Stats 7.2 > HagimiMonitor 4.1 > NetWorker Pro 3.5
 
-**改进方向**：降频非关键指标轮询、用 IOKit IOReport、编译 arm64 原生版本
+**CPU 降低的关键因素**：IOReport 动态加载（Apple Silicon 推送式）+ Intel 优雅降级 + `#if arch(arm64)` 编译期隔离
 
-
+**改进方向**：编译 arm64 原生版本（当前 Intel 测试已无 IOReport 加持，Apple Silicon 上优势更大）

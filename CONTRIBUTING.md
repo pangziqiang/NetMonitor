@@ -83,6 +83,7 @@ bash build-app.sh --release
 - 所有测试必须通过：`swift test`
 - 新功能应包含单元测试
 - 测试使用 Swift Testing 框架（`@Test`, `@Suite`）
+- 当前测试：3 个 Suite，91 个测试用例
 
 ## 行为准则
 

@@ -20,7 +20,7 @@ struct DatabaseManagerTests {
         let before = db.todayTraffic()
         #expect(before.down == 100)
         #expect(before.up == 50)
-        db.clearAllTraffic()
+        db.clearAllTraffic(confirm: true)
         let after = db.todayTraffic()
         #expect(after.down == 0)
         #expect(after.up == 0)
@@ -73,7 +73,7 @@ struct DatabaseManagerTests {
     @Test func databaseManagerClearAndReaccumulate() throws {
         let db = try DatabaseManager(path: ":memory:")
         db.accumulateTraffic(down: 100, up: 50)
-        db.clearAllTraffic()
+        db.clearAllTraffic(confirm: true)
         db.accumulateTraffic(down: 200, up: 100)
         let today = db.todayTraffic()
         #expect(today.down == 200)

@@ -86,37 +86,41 @@ public class DatabaseManager {
 
     deinit {
         flushTimer?.invalidate()
+        flushTimer = nil
         closed = true
-        // Drain pending traffic synchronously (outside queue to avoid deadlock)
-        _flushPendingSyncDirect()
+        
+        // Drain pending traffic via queue.sync to ensure all pending queue operations complete first
+        // Use a direct synchronous approach to avoid deadlock with the timer
+        queue.sync {
+            // Flush accumulators
+            accumLock.lock()
+            let down = minuteAccumDown
+            let up = minuteAccumUp
+            minuteAccumDown = 0
+            minuteAccumUp = 0
+            let now = Date()
+            accumLock.unlock()
+
+            peakLock.lock()
+            let peakD = pendingPeakDown
+            let peakU = pendingPeakUp
+            let procs = pendingProcesses
+            pendingPeakDown = 0
+            pendingPeakUp = 0
+            pendingProcesses = nil
+            peakLock.unlock()
+
+            guard down > 0 || up > 0 else { return }
+            
+            let ts = iso8601String(from: now)
+            _insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
+        }
+        
         let dbToClose = db
+        db = nil
         queue.async {
             if let db = dbToClose { sqlite3_close(db) }
         }
-    }
-
-    /// Flush pending traffic without going through queue.sync (used in deinit to avoid deadlock).
-    private func _flushPendingSyncDirect() {
-        accumLock.lock()
-        let down = minuteAccumDown
-        let up = minuteAccumUp
-        minuteAccumDown = 0
-        minuteAccumUp = 0
-        let now = Date()
-        accumLock.unlock()
-
-        peakLock.lock()
-        let peakD = pendingPeakDown
-        let peakU = pendingPeakUp
-        let procs = pendingProcesses
-        pendingPeakDown = 0
-        pendingPeakUp = 0
-        pendingProcesses = nil
-        peakLock.unlock()
-
-        guard down > 0 || up > 0 else { return }
-        let ts = ISO8601Formatter.string(from: now)
-        self._insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
     }
 
     private func open(path: String) throws {
@@ -290,20 +294,19 @@ public class DatabaseManager {
 
         guard down > 0 || up > 0 else { return }
 
-        let ts = ISO8601Formatter.string(from: now)
+        let ts = iso8601String(from: now)
 
         queue.async { [weak self] in
             guard let self, !self.closed else { return }
             self._insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
-            self.flushCount += 1
-            if self.flushCount % 60 == 0 {
-                self._retainMinutely()
-                self._retainHourly()
-                self.retainEvents()
-            }
+            
+            // Run retention once per hour (not every 15 min)
             let hour = Calendar.current.component(.hour, from: now)
             if hour != self.lastHourAggregated {
                 self.lastHourAggregated = hour
+                self._retainMinutely()
+                self._retainHourly()
+                self.retainEvents()
                 self._aggregateHourly(endingAt: now)
             }
         }
@@ -330,7 +333,7 @@ public class DatabaseManager {
 
         guard down > 0 || up > 0 else { return }
 
-        let ts = ISO8601Formatter.string(from: now)
+        let ts = iso8601String(from: now)
 
         queue.sync {
             if closed { return }
@@ -390,7 +393,7 @@ public class DatabaseManager {
 
     private func _retainMinutely() {
         guard let db else { return }
-        let cutoff = ISO8601Formatter.string(from: Date().addingTimeInterval(-SECONDS_PER_DAY * Double(MINUTELY_RETENTION_DAYS)))
+        let cutoff = iso8601String(from: Date().addingTimeInterval(-SECONDS_PER_DAY * Double(MINUTELY_RETENTION_DAYS)))
         var stmt: OpaquePointer?
         let sql = "DELETE FROM traffic_minutely WHERE timestamp < ?"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
@@ -409,7 +412,7 @@ public class DatabaseManager {
 
     private func _retainHourly() {
         guard let db else { return }
-        let cutoff = ISO8601Formatter.string(from: Date().addingTimeInterval(-SECONDS_PER_DAY * Double(HOURLY_RETENTION_DAYS)))
+        let cutoff = iso8601String(from: Date().addingTimeInterval(-SECONDS_PER_DAY * Double(HOURLY_RETENTION_DAYS)))
         var stmt: OpaquePointer?
         let sql = "DELETE FROM traffic_hourly WHERE hour < ?"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
@@ -486,7 +489,7 @@ public class DatabaseManager {
             guard let db else { return [] }
             var stmt: OpaquePointer?
             let sql = "SELECT timestamp, bytes_down, bytes_up FROM traffic_minutely WHERE timestamp >= ? ORDER BY timestamp ASC"
-            let cutoff = ISO8601Formatter.string(from: Date().addingTimeInterval(-Double(minutes) * 60))
+            let cutoff = iso8601String(from: Date().addingTimeInterval(-Double(minutes) * 60))
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
                 os_log(.error, log: log, "minutelyTraffic prepare failed: %{private}@", String(cString: sqlite3_errmsg(db)))
                 return []
@@ -499,7 +502,7 @@ public class DatabaseManager {
                 let ts = String(cString: textPtr)
                 let down = UInt64(sqlite3_column_int64(stmt, 1))
                 let up = UInt64(sqlite3_column_int64(stmt, 2))
-                if let date = ISO8601Formatter.date(from: ts) {
+                if let date = iso8601Date(from: ts) {
                     result.append((date, down, up))
                 }
             }
@@ -531,8 +534,8 @@ public class DatabaseManager {
     }
 
     public func minutelyTraffic(from: Date, to: Date) -> [(time: Date, down: UInt64, up: UInt64, peakDown: UInt64, peakUp: UInt64, processes: String?)] {
-        let fromStr = ISO8601Formatter.string(from: from)
-        let toStr = ISO8601Formatter.string(from: to)
+        let fromStr = iso8601String(from: from)
+        let toStr = iso8601String(from: to)
         return queue.sync {
             guard let db else { return [] }
             var stmt: OpaquePointer?
@@ -545,7 +548,7 @@ public class DatabaseManager {
             while sqlite3_step(stmt) == SQLITE_ROW {
                 guard let textPtr = sqlite3_column_text(stmt, 0) else { continue }
                 let ts = String(cString: textPtr)
-                if let date = ISO8601Formatter.date(from: ts) {
+                if let date = iso8601Date(from: ts) {
                     let procs = sqlite3_column_text(stmt, 5).map { String(cString: $0) }
                     result.append((
                         date,
@@ -580,7 +583,7 @@ public class DatabaseManager {
         var csv = Self.csvBOM
         csv += "时间,下载(字节),上传(字节),峰值下行(bytes/s),峰值上行(bytes/s),活跃进程\n"
         for row in data {
-            let ts = ISO8601Formatter.string(from: row.time)
+            let ts = iso8601String(from: row.time)
             let procs = row.processes?.replacingOccurrences(of: ",", with: ";") ?? ""
             csv += "\(ts),\(row.down),\(row.up),\(row.peakDown),\(row.peakUp),\"\(procs)\"\n"
         }
@@ -600,7 +603,7 @@ public class DatabaseManager {
         var arr: [[String: Any]] = []
         for row in data {
             var dict: [String: Any] = [
-                "time": ISO8601Formatter.string(from: row.time),
+                "time": iso8601String(from: row.time),
                 "down": row.down, "up": row.up,
                 "peak_down": row.peakDown, "peak_up": row.peakUp
             ]
@@ -623,9 +626,9 @@ public class DatabaseManager {
         guard let hourInterval = cal.dateInterval(of: .hour, for: date) else { return }
         guard let hourStart = cal.date(byAdding: .hour, value: -1, to: hourInterval.start) else { return }
         let hourEnd = hourInterval.start
-        let hourStr = ISO8601Formatter.string(from: hourStart)
-        let startStr = ISO8601Formatter.string(from: hourStart)
-        let endStr = ISO8601Formatter.string(from: hourEnd)
+        let hourStr = iso8601String(from: hourStart)
+        let startStr = iso8601String(from: hourStart)
+        let endStr = iso8601String(from: hourEnd)
 
         var stmt: OpaquePointer?
         let sql = "SELECT AVG(bytes_down), AVG(bytes_up), MAX(peak_down), MAX(peak_up), SUM(bytes_down), SUM(bytes_up) FROM traffic_minutely WHERE timestamp >= ? AND timestamp < ?"
@@ -720,9 +723,9 @@ public class DatabaseManager {
     private static func _parseHourlyRecord(stmt: OpaquePointer) -> HourlyRecord? {
         guard let textPtr = sqlite3_column_text(stmt, 0) else { return nil }
         let dateStr = String(cString: textPtr)
-        guard let date = ISO8601Formatter.date(from: dateStr) else { return nil }
-        let peakDownTime = sqlite3_column_text(stmt, 7).flatMap { ISO8601Formatter.date(from: String(cString: $0)) }
-        let peakUpTime = sqlite3_column_text(stmt, 8).flatMap { ISO8601Formatter.date(from: String(cString: $0)) }
+        guard let date = iso8601Date(from: dateStr) else { return nil }
+        let peakDownTime = sqlite3_column_text(stmt, 7).flatMap { iso8601Date(from: String(cString: $0)) }
+        let peakUpTime = sqlite3_column_text(stmt, 8).flatMap { iso8601Date(from: String(cString: $0)) }
         return HourlyRecord(
             hour: date,
             avgDown: sqlite3_column_double(stmt, 1),
@@ -739,7 +742,7 @@ public class DatabaseManager {
     public func hourlyTrafficToday() -> [HourlyRecord] {
         let cal = Calendar.current
         let startOfDay = cal.startOfDay(for: Date())
-        let startStr = ISO8601Formatter.string(from: startOfDay)
+        let startStr = iso8601String(from: startOfDay)
         return queue.sync {
             guard let db else { return [] as [HourlyRecord] }
             var stmt: OpaquePointer?
@@ -756,8 +759,8 @@ public class DatabaseManager {
     }
 
     public func hourlyTrafficRange(from: Date, to: Date) -> [HourlyRecord] {
-        let fromStr = ISO8601Formatter.string(from: from)
-        let toStr = ISO8601Formatter.string(from: to)
+        let fromStr = iso8601String(from: from)
+        let toStr = iso8601String(from: to)
         return queue.sync {
             guard let db else { return [] as [HourlyRecord] }
             var stmt: OpaquePointer?
@@ -780,7 +783,7 @@ public class DatabaseManager {
             let cal = Calendar.current
             let endDate = cal.startOfDay(for: Date())
             guard let startDate = cal.date(byAdding: .day, value: -days, to: endDate) else { return [] }
-            let fromStr = ISO8601Formatter.string(from: startDate)
+            let fromStr = iso8601String(from: startDate)
             var stmt: OpaquePointer?
             let sql = """
                 SELECT SUBSTR(hour, 1, 10) as day,
@@ -817,7 +820,7 @@ public class DatabaseManager {
             let cal = Calendar.current
             let endDate = cal.startOfDay(for: Date())
             guard let startDate = cal.date(byAdding: .day, value: -weeks * 7, to: endDate) else { return [] }
-            let fromStr = ISO8601Formatter.string(from: startDate)
+            let fromStr = iso8601String(from: startDate)
             var stmt: OpaquePointer?
             let sql = """
                 SELECT SUBSTR(hour, 1, 10) as day,
@@ -848,9 +851,9 @@ public class DatabaseManager {
             var lastWeekStr = ""
             for row in dailyRows {
                 let dateStr = row.0
-                guard let date = ISO8601Formatter.date(from: dateStr + "T00:00:00.000Z") else { continue }
+                guard let date = iso8601Date(from: dateStr + "T00:00:00.000Z") else { continue }
                 let weekStart = cal.dateInterval(of: .weekOfYear, for: date)?.start ?? date
-                let weekStr = String(ISO8601Formatter.string(from: weekStart).prefix(10))
+                let weekStr = String(iso8601String(from: weekStart).prefix(10))
                 if weekStr != lastWeekStr && !weekBucket.isEmpty {
                     weeklyResult.append(aggregateWeek(weekStr: lastWeekStr, days: weekBucket))
                     weekBucket = []
@@ -911,7 +914,7 @@ public class DatabaseManager {
 
     private func retainEvents() {
         guard let db else { return }
-        let cutoff = ISO8601Formatter.string(from: Date().addingTimeInterval(-SECONDS_PER_DAY * Double(EVENT_RETENTION_DAYS)))
+        let cutoff = iso8601String(from: Date().addingTimeInterval(-SECONDS_PER_DAY * Double(EVENT_RETENTION_DAYS)))
         var stmt: OpaquePointer?
         let sql = "DELETE FROM app_events WHERE timestamp < ?"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
@@ -931,7 +934,7 @@ public class DatabaseManager {
             guard let db else { return "{}" }
 
             var result: [String: Any] = [:]
-            result["exported_at"] = ISO8601Formatter.string(from: Date())
+            result["exported_at"] = iso8601String(from: Date())
             result["app_version"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") ?? "unknown"
             result["os_version"] = ProcessInfo.processInfo.operatingSystemVersionString
             result["processor_count"] = ProcessInfo.processInfo.processorCount
@@ -994,8 +997,13 @@ public class DatabaseManager {
         }
     }
 
-    /// Deletes all rows from both minutely and daily traffic tables within a single transaction.
-    public func clearAllTraffic() {
+    /// Deletes all rows from minutely, daily, and hourly traffic tables within a single transaction.
+    /// Requires explicit confirmation to prevent accidental data loss.
+    internal func clearAllTraffic(confirm: Bool = false) {
+        guard confirm else {
+            os_log(.error, log: log, "clearAllTraffic called without confirm=true")
+            return
+        }
         queue.sync { [weak self] in
             guard let self, !self.closed else { return }
             self._clearTables()
@@ -1046,8 +1054,17 @@ public class DatabaseManager {
     }
 }
 
-public let ISO8601Formatter: ISO8601DateFormatter = {
+// Thread-safe ISO8601 formatter factory
+private func makeISO8601Formatter() -> ISO8601DateFormatter {
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return f
-}()
+}
+
+private func iso8601String(from date: Date) -> String {
+    return makeISO8601Formatter().string(from: date)
+}
+
+private func iso8601Date(from string: String) -> Date? {
+    return makeISO8601Formatter().date(from: string)
+}

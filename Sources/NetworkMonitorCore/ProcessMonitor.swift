@@ -34,8 +34,9 @@ public class ProcessMonitor: ObservableObject {
     public var maxProcesses = 8
     public let processorCount: Int
 
-    private let networkQueue = DispatchQueue(label: "com.opencode.network-monitor.nettop")
-    private var prevNetworkBytes: [Int32: (download: UInt64, upload: UInt64)] = [:]
+    private let networkQueue = DispatchQueue(label: "com.opencode.networkmonitor.nettop")
+    private let networkLock = NSLock()
+    private var prevNetworkBytes: [String: (startTime: time_t, download: UInt64, upload: UInt64)] = [:]
     private var lastNetworkTime = Date()
     private var networkHasBaseline = false
 
@@ -48,7 +49,10 @@ public class ProcessMonitor: ObservableObject {
         processorCount = ProcessInfo.processInfo.processorCount
     }
 
-    private let tickQueue = DispatchQueue(label: "com.opencode.network-monitor.process", qos: .utility)
+    private let tickQueue = DispatchQueue(label: "com.opencode.networkmonitor.process", qos: .utility)
+
+    // MARK: - Configurable nettop timeout
+    private static let nettopTimeout: TimeInterval = 15.0
 
     public func tick() {
         guard isActive else { return }
@@ -118,24 +122,37 @@ public class ProcessMonitor: ObservableObject {
             for (pid, (dl, ul)) in raw {
                 var downloadSpeed: Double = 0
                 var uploadSpeed: Double = 0
-                if self.networkHasBaseline, let prev = self.prevNetworkBytes[pid] {
-                    let interval = now.timeIntervalSince(self.lastNetworkTime)
+                let startTime = getProcessStartTime(pid)
+                let key = "\(pid)_\(startTime)"
+                
+                self.networkLock.lock()
+                let hasBaseline = self.networkHasBaseline
+                var interval: TimeInterval = 0
+                var dlDelta: UInt64 = 0
+                var ulDelta: UInt64 = 0
+                
+                if hasBaseline, let prev = self.prevNetworkBytes[key] {
+                    interval = now.timeIntervalSince(self.lastNetworkTime)
                     if interval > 0 {
-                        let dlDelta = dl > prev.download ? dl - prev.download : 0
-                        let ulDelta = ul > prev.upload ? ul - prev.upload : 0
+                        dlDelta = dl > prev.download ? dl - prev.download : 0
+                        ulDelta = ul > prev.upload ? ul - prev.upload : 0
                         downloadSpeed = Double(dlDelta) / interval
                         uploadSpeed = Double(ulDelta) / interval
                     }
                 }
+                // Always update stored bytes
+                self.prevNetworkBytes[key] = (startTime, dl, ul)
+                self.networkLock.unlock()
 
                 let name = processName(pid)
                 let snap = ProcessSnapshot(pid: pid, name: name, cpuPercent: 0, rssBytes: 0, downloadBytes: downloadSpeed, uploadBytes: uploadSpeed)
                 snapshots.append(snap)
             }
 
-            self.prevNetworkBytes = raw
+            self.networkLock.lock()
             self.lastNetworkTime = now
             self.networkHasBaseline = true
+            self.networkLock.unlock()
 
             let sorted = snapshots.sorted { ($0.downloadBytes + $0.uploadBytes) > ($1.downloadBytes + $1.uploadBytes) }
             let top = Array(sorted.prefix(20))
@@ -148,10 +165,8 @@ public class ProcessMonitor: ObservableObject {
     private func readNettop() -> [Int32: (download: UInt64, upload: UInt64)]? {
         let task = Process()
         task.launchPath = "/usr/bin/nettop"
-        task.arguments = [
-            "-P", "-L", "1", "-n",
-            "-k", "time,interface,state,rx_dupe,rx_ooo,re-tx,rtt_avg,rcvsize,tx_win,tc_class,tc_mgt,cc_algo,P,C,R,W,arch"
-        ]
+        // Minimal columns: command, pid, rx_bytes, tx_bytes
+        task.arguments = ["-P", "-L", "1", "-n", "-k", "command,rx_bytes,tx_bytes"]
 
         let pipe = Pipe()
         task.standardOutput = pipe
@@ -159,6 +174,7 @@ public class ProcessMonitor: ObservableObject {
 
         let semaphore = DispatchSemaphore(value: 0)
         var timedOut = false
+        var outputData: Data?
 
         do {
             let timeoutWork = DispatchWorkItem {
@@ -166,7 +182,7 @@ public class ProcessMonitor: ObservableObject {
                 task.terminate()
                 semaphore.signal()
             }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: timeoutWork)
+            DispatchQueue.global().asyncAfter(deadline: .now() + Self.nettopTimeout, execute: timeoutWork)
             try task.run()
             task.terminationHandler = { _ in semaphore.signal() }
         } catch {
@@ -176,12 +192,12 @@ public class ProcessMonitor: ObservableObject {
 
         semaphore.wait()
         if timedOut {
-            LogService.error("nettop_timeout", detail: "nettop did not complete within 10s")
+            LogService.error("nettop_timeout", detail: "nettop did not complete within \(Self.nettopTimeout)s")
             return nil
         }
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return nil }
+        outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let data = outputData, let output = String(data: data, encoding: .utf8) else { return nil }
         return Self.parseNettopOutput(output)
     }
 
@@ -196,8 +212,10 @@ public class ProcessMonitor: ObservableObject {
 
         networkQueue.async { [weak self] in
             guard let self else { return }
+            self.networkLock.lock()
             self.prevNetworkBytes = [:]
             self.networkHasBaseline = false
+            self.networkLock.unlock()
             DispatchQueue.main.async {
                 self.topByNetwork = []
             }
@@ -223,18 +241,34 @@ public class ProcessMonitor: ObservableObject {
     }
 
     /// Parses nettop CSV output into per-PID download/upload byte counts.
-    /// Expects lines like: `Safari.12345,123456,7890`
+    /// Dynamically parses header row to find command, rx_bytes, tx_bytes columns.
     /// Lines starting with `#` are treated as comments and skipped.
     internal static func parseNettopOutput(_ output: String) -> [Int32: (download: UInt64, upload: UInt64)] {
         var result: [Int32: (download: UInt64, upload: UInt64)] = [:]
+        var header: [String] = []
+        var headerParsed = false
+        
         output.enumerateLines { line, _ in
             guard !line.hasPrefix("#") else { return }
             let parts = line.split(separator: ",")
-            guard parts.count >= 3 else { return }
-            let namePid = parts[0].split(separator: ".")
+            if !headerParsed {
+                header = parts.map(String.init)
+                headerParsed = true
+                return
+            }
+            guard parts.count >= header.count else { return }
+            
+            // Find column indices dynamically
+            let cmdIdx = header.firstIndex(of: "command") ?? 0
+            let rxIdx = header.firstIndex(of: "rx_bytes") ?? 1
+            let txIdx = header.firstIndex(of: "tx_bytes") ?? 2
+            
+            guard parts.count > max(cmdIdx, rxIdx, txIdx) else { return }
+            
+            let namePid = parts[cmdIdx].split(separator: ".")
             guard let pidStr = namePid.last, let pid = Int32(pidStr),
-                  let download = UInt64(parts[1]),
-                  let upload = UInt64(parts[2]) else { return }
+                  let download = UInt64(parts[rxIdx]),
+                  let upload = UInt64(parts[txIdx]) else { return }
             result[pid] = (download, upload)
         }
         return result
@@ -250,4 +284,12 @@ private func processName(_ pid: Int32) -> String {
         return String(cString: buf)
     }
     return "pid_\(pid)"
+}
+
+private func getProcessStartTime(_ pid: Int32) -> time_t {
+    var info = proc_bsdinfo()
+    let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+    let ret = proc_pidinfo(pid, Int32(PROC_PIDTBSDINFO), 0, &info, size)
+    guard ret == size else { return 0 }
+    return time_t(info.pbi_start_tvsec)
 }

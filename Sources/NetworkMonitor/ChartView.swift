@@ -144,7 +144,7 @@ struct GraphCanvas: View {
 
     var body: some View {
         let chartMax = speedChartMax(peak: data.max() ?? 0)
-        let fingerprint = data.count &* 31 &+ data.suffix(3).enumerated().reduce(0) { $0 + Int($1.element * 1000) &* (31 &+ $1.offset) }
+        let fingerprint = stableFingerprint(data)
         ChartView(
             renderer: { ctx, size, isDark in
                 let w = size.width

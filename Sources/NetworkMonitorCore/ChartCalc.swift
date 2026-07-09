@@ -56,3 +56,10 @@ public func chartDataIndex(atX x: CGFloat, width: CGFloat, count: Int) -> Int? {
     let idx = Int(round(x / stepX))
     return max(0, min(idx, count - 1))
 }
+
+public func stableFingerprint(_ data: [Double]) -> Int {
+    var hasher = Hasher()
+    hasher.combine(data.count)
+    data.suffix(3).forEach { hasher.combine($0) }
+    return hasher.finalize()
+}

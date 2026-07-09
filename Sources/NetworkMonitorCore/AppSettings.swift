@@ -63,6 +63,13 @@ public class AppSettings: ObservableObject {
     @Published public var menuBarOrderRaw: String = "speed,dailyTraffic,cpu,gpu,memory" {
         didSet { if !isLoadingDefaults { userDefaults.set(menuBarOrderRaw, forKey: "menuBarOrder") } }
     }
+    @Published public var excludedInterfacePrefixesRaw: String = "en5,en6,en7,en8,en9" {
+        didSet { if !isLoadingDefaults { userDefaults.set(excludedInterfacePrefixesRaw, forKey: "excludedInterfacePrefixes") } }
+    }
+
+    public var excludedInterfacePrefixes: [String] {
+        excludedInterfacePrefixesRaw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+    }
 
     public var menuBarOrder: [String] {
         get { menuBarOrderRaw.split(separator: ",").map(String.init) }
@@ -176,6 +183,7 @@ public class AppSettings: ObservableObject {
             "menuShowTopProcesses": true,
             "menuTopProcessesCount": 8,
             "menuBarOrder": "speed,dailyTraffic,cpu,gpu,memory",
+            "excludedInterfacePrefixes": "en5,en6,en7,en8,en9",
             "floatDoubleClickAction": FloatDoubleClickAction.settings.rawValue
         ])
     }
@@ -207,6 +215,9 @@ public class AppSettings: ObservableObject {
             menuBarOrderRaw = items.isEmpty ? "speed,dailyTraffic,cpu,gpu,memory" : items.joined(separator: ",")
         } else {
             menuBarOrderRaw = "speed,dailyTraffic,cpu,gpu,memory"
+        }
+        if let stored = userDefaults.string(forKey: "excludedInterfacePrefixes"), !stored.isEmpty {
+            excludedInterfacePrefixesRaw = stored
         }
         showDockIcon = userDefaults.bool(forKey: "showDockIcon")
         showFloatingWindow = userDefaults.bool(forKey: "showFloatingWindow")

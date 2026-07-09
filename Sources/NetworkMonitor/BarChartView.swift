@@ -149,9 +149,18 @@ struct BarChartRenderer: View {
     private var barsCanvas: some View {
         let labelH: CGFloat = 30
         let totalH = config.cH + config.xPad + labelH
-        // Resolve colors outside Canvas for correct dark/light mode rendering
-        let labelMutedColor = NSColor(theme.textMuted)
+        
+        // Resolve colors for background (used outside Canvas)
+        let theme = colorScheme == .dark ? ThemeColors.dark : ThemeColors.light
+        let backgroundColor = NSColor(theme.textMuted.opacity(0.03))
+        
         return Canvas { ctx, size in
+            // Resolve colors inside Canvas for correct dark/light mode rendering
+            let labelMutedColor = NSColor(theme.textMuted)
+            let gridColor = NSColor(theme.textMuted.opacity(0.06))
+            let gridColorVertical = NSColor(theme.textMuted.opacity(0.05))
+            let futureBarColor = NSColor(theme.textMuted.opacity(0.04))
+            
             let n = data.count
             guard n > 0 else { return }
 
@@ -161,7 +170,7 @@ struct BarChartRenderer: View {
                 var hPath = Path()
                 hPath.move(to: CGPoint(x: 0, y: y))
                 hPath.addLine(to: CGPoint(x: size.width, y: y))
-                ctx.stroke(hPath, with: .color(Color(NSColor(theme.textMuted.opacity(0.06)))), style: StrokeStyle(lineWidth: 0.5, dash: [4, 3]))
+                ctx.stroke(hPath, with: .color(Color(gridColor)), style: StrokeStyle(lineWidth: 0.5, dash: [4, 3]))
             }
 
             // Grid vertical (centered in gap between bars)
@@ -173,7 +182,7 @@ struct BarChartRenderer: View {
                     var vPath = Path()
                     vPath.move(to: CGPoint(x: x, y: 0))
                     vPath.addLine(to: CGPoint(x: x, y: config.cH))
-                    ctx.stroke(vPath, with: .color(Color(NSColor(theme.textMuted.opacity(0.05)))), style: StrokeStyle(lineWidth: 0.5, dash: [4, 3]))
+                    ctx.stroke(vPath, with: .color(Color(gridColorVertical)), style: StrokeStyle(lineWidth: 0.5, dash: [4, 3]))
                 }
             }
 
@@ -201,7 +210,7 @@ struct BarChartRenderer: View {
                 // Bar rect
                 let barRect = CGRect(x: x, y: barY, width: config.barW, height: hPx)
                 let barPath = Path(roundedRect: barRect, cornerSize: CGSize(width: config.barR, height: config.barR))
-                ctx.fill(barPath, with: .color(isFut ? Color(NSColor(theme.textMuted.opacity(0.04))) : color))
+                ctx.fill(barPath, with: .color(isFut ? Color(futureBarColor) : color))
 
                 // X label (primary)
                 let labelY = config.cH + config.xPad + 8
@@ -223,7 +232,7 @@ struct BarChartRenderer: View {
             }
         }
         .frame(width: config.barOff * 2 + config.barW * CGFloat(data.count) + config.barGap * CGFloat(max(data.count - 1, 0)), height: totalH)
-        .background(Color(NSColor(theme.textMuted.opacity(0.03))))
+        .background(Color(backgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
