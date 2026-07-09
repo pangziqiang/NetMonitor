@@ -315,7 +315,7 @@ struct TrafficStatsView: View {
         let hoursElapsed = isToday ? max(1, nowLocal + 1) : 24
         let a1 = Double(s1) / Double(hoursElapsed * 3600)
         let a2 = Double(s2) / Double(hoursElapsed * 3600)
-        let futureHour = isToday ? (nowLocal - 1) : 99
+        let futureHour = isToday ? nowLocal : 99
 
         page = BarChartPage(
             dn: dn, up: up, l1: l1, l2: l2,
