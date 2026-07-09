@@ -287,6 +287,21 @@ struct TrafficStatsView: View {
             }
         }
 
+        // Add current hour's minutely data (not yet aggregated into hourly)
+        if isToday {
+            let currentHour = localCal.component(.hour, from: Date())
+            let hourStart = localCal.date(from: DateComponents(year: tly, month: tlm, day: tld, hour: currentHour))!
+            let hourEnd = localCal.date(byAdding: .hour, value: 1, to: hourStart)!
+            let minutelyData = db.minutelyTraffic(from: hourStart, to: hourEnd)
+            for record in minutelyData {
+                dn[currentHour] += record.down
+                up[currentHour] += record.up
+            }
+            if !minutelyData.isEmpty {
+                hasDataArr[currentHour] = true
+            }
+        }
+
         let l1 = (0..<24).map { String(format: "%02d:00", $0) }
         let l2 = [String](repeating: "", count: 24)
         let s1 = dn.reduce(0, +)
