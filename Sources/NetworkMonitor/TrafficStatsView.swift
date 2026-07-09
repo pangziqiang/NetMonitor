@@ -309,17 +309,33 @@ struct TrafficStatsView: View {
         let summary = db.dailyTrafficSummary(days: 730)
         let todayStr = currentDateStamp()
 
+        let cal = Calendar.current
         var dataByDate: [String: (down: UInt64, up: UInt64)] = [:]
         for row in summary {
             dataByDate[row.date] = (row.totalDown, row.totalUp)
         }
+
+        // Patch today with live minutely data
+        let todayStart = cal.startOfDay(for: Date())
+        let todayMinutely = db.minutelyTraffic(from: todayStart, to: Date())
+        var todayExtraDown: UInt64 = 0
+        var todayExtraUp: UInt64 = 0
+        for m in todayMinutely {
+            todayExtraDown += m.down
+            todayExtraUp += m.up
+        }
+        if let existing = dataByDate[todayStr] {
+            dataByDate[todayStr] = (existing.down + todayExtraDown, existing.up + todayExtraUp)
+        } else if todayExtraDown > 0 || todayExtraUp > 0 {
+            dataByDate[todayStr] = (todayExtraDown, todayExtraUp)
+        }
+
         let sortedDates = dataByDate.keys.sorted()
         guard let earliestStr = sortedDates.first,
               let earliestDate = ISO8601Formatter.date(from: earliestStr + "T00:00:00.000Z") else {
             page = nil; return
         }
 
-        let cal = Calendar.current
         let weekday = cal.component(.weekday, from: earliestDate)
         let daysBackToMonday = (weekday + 5) % 7
         guard let mondayDate = cal.date(byAdding: .day, value: -daysBackToMonday, to: earliestDate) else {
@@ -361,6 +377,7 @@ struct TrafficStatsView: View {
     private func loadYear(_ db: DatabaseManager) {
         let summary = db.dailyTrafficSummary(days: 730)
 
+        let cal = Calendar.current
         var monthlyDict: [String: (down: UInt64, up: UInt64)] = [:]
         var monthKeysWithData = Set<String>()
         for row in summary {
@@ -370,8 +387,23 @@ struct TrafficStatsView: View {
             monthKeysWithData.insert(monthKey)
         }
 
+        // Patch current month with live minutely data
+        let todayStart = cal.startOfDay(for: Date())
+        let todayMinutely = db.minutelyTraffic(from: todayStart, to: Date())
+        var todayExtraDown: UInt64 = 0
+        var todayExtraUp: UInt64 = 0
+        for m in todayMinutely {
+            todayExtraDown += m.down
+            todayExtraUp += m.up
+        }
+        if todayExtraDown > 0 || todayExtraUp > 0 {
+            let currentMonthKey = String(ISO8601Formatter.string(from: Date()).prefix(7))
+            monthlyDict[currentMonthKey, default: (0, 0)].down += todayExtraDown
+            monthlyDict[currentMonthKey, default: (0, 0)].up += todayExtraUp
+            monthKeysWithData.insert(currentMonthKey)
+        }
+
         // 从当年1月开始
-        let cal = Calendar.current
         let now = Date()
         let year = cal.component(.year, from: now)
         guard let january = ISO8601Formatter.date(from: "\(year)-01-01T00:00:00.000Z") else {
