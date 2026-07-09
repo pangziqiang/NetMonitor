@@ -81,25 +81,24 @@ public func shortSpeed(_ bps: Double, unit: DisplayUnit) -> String {
     }
 }
 
-private let threadSafeDateFormatter: DateFormatter = {
+private let dateFormatterLock = NSLock()
+private let _sharedDateFormatter: DateFormatter = {
     let f = DateFormatter()
     f.dateFormat = "yyyy-MM-dd"
     f.locale = Locale(identifier: "en_US_POSIX")
     return f
 }()
 
-private let threadSafeTimeFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "HH:mm:ss"
-    f.locale = Locale(identifier: "en_US_POSIX")
-    return f
-}()
+public func currentDateStamp() -> String {
+    dateFormatterLock.lock()
+    defer { dateFormatterLock.unlock() }
+    return _sharedDateFormatter.string(from: Date())
+}
 
-public func makeDateFormatter() -> DateFormatter {
-    let f = DateFormatter()
-    f.dateFormat = "yyyy-MM-dd"
-    f.locale = Locale(identifier: "en_US_POSIX")
-    return f
+public func currentDateStamp(from date: Date) -> String {
+    dateFormatterLock.lock()
+    defer { dateFormatterLock.unlock() }
+    return _sharedDateFormatter.string(from: date)
 }
 
 public func makeTimeFormatter() -> DateFormatter {
@@ -109,15 +108,7 @@ public func makeTimeFormatter() -> DateFormatter {
     return f
 }
 
-public func currentDateStamp() -> String {
-    threadSafeDateFormatter.string(from: Date())
-}
-
-public func currentDateStamp(from date: Date) -> String {
-    threadSafeDateFormatter.string(from: date)
-}
-
-private let safeFilenameDateFormatter: DateFormatter = {
+private let _safeFilenameDateFormatter: DateFormatter = {
     let f = DateFormatter()
     f.dateFormat = "yyyy-MM-dd_HH-mm-ss"
     f.locale = Locale(identifier: "en_US_POSIX")
@@ -125,5 +116,7 @@ private let safeFilenameDateFormatter: DateFormatter = {
 }()
 
 public func safeFilenameDate() -> String {
-    safeFilenameDateFormatter.string(from: Date())
+    dateFormatterLock.lock()
+    defer { dateFormatterLock.unlock() }
+    return _safeFilenameDateFormatter.string(from: Date())
 }

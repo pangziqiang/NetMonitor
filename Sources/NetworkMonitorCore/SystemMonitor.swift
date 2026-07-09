@@ -341,23 +341,12 @@ public final class SystemMonitor: ObservableObject, @unchecked Sendable {
             guard let self else { return }
             self.ioReportCPULock.lock()
             defer { self.ioReportCPULock.unlock() }
-            
-            // IOReport CPU channels provide aggregate ticks
-            // "cpu_total" = total cycles, "cpu_idle" = idle cycles
+
             if channelName.contains("cpu_total") {
                 self.ioReportCPUPrevTotal = UInt64(value)
             } else if channelName.contains("cpu_idle") {
                 self.ioReportCPUPrevIdle = UInt64(value)
             }
-            
-            // Compute percentage when we have both values
-            guard self.ioReportCPUPrevTotal > 0 else { return }
-            let prevTotal = self.ioReportCPUPrevTotal
-            let prevIdle = self.ioReportCPUPrevIdle
-            
-            // Note: this is a simplified computation - in reality we'd need to track
-            // the previous sample to compute delta. For now we use the previous stored values.
-            // A more robust implementation would track last sample and compute delta.
         }
     }
 
