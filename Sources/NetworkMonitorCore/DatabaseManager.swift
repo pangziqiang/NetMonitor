@@ -427,12 +427,16 @@ public class DatabaseManager {
     /// Returns today's total download and upload bytes from the daily summary table.
     public func todayTraffic() -> (down: UInt64, up: UInt64) {
         let dateStr = currentDateStamp()
+        return dailyTraffic(for: dateStr)
+    }
+
+    public func dailyTraffic(for dateStr: String) -> (down: UInt64, up: UInt64) {
         return queue.sync {
             guard let db else { return (0, 0) }
             var stmt: OpaquePointer?
             let sql = "SELECT bytes_down, bytes_up FROM traffic_daily WHERE date = ?"
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-                os_log(.error, log: log, "todayTraffic prepare failed: %{private}@", String(cString: sqlite3_errmsg(db)))
+                os_log(.error, log: log, "dailyTraffic prepare failed: %{private}@", String(cString: sqlite3_errmsg(db)))
                 return (0, 0)
             }
             defer { sqlite3_finalize(stmt) }

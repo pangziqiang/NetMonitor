@@ -44,7 +44,7 @@ struct TrafficStatsView: View {
         .frame(minWidth: cfg.pW, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
         .background(theme.appBg)
         .onAppear {
-            refreshTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
+            refreshTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
                 DatabaseManager.shared?.flushPendingTrafficSync()
                 loadData()
             }
@@ -285,6 +285,29 @@ struct TrafficStatsView: View {
                 dn[h] += record.down
                 up[h] += record.up
                 hasDataArr[h] = true
+            }
+        }
+
+        // Use traffic_daily as authoritative total, distribute gap across hours
+        let dailyTotal = db.dailyTraffic(for: dateStr)
+        let minutelyDnSum = dn.reduce(0, +)
+        let minutelyUpSum = up.reduce(0, +)
+        let dnGap = dailyTotal.down > minutelyDnSum ? dailyTotal.down - minutelyDnSum : 0
+        let upGap = dailyTotal.up > minutelyUpSum ? dailyTotal.up - minutelyUpSum : 0
+        let dnHoursWithData = hasDataArr.enumerated().filter { $0.element }.count
+        let upHoursWithData = hasDataArr.enumerated().filter { $0.element }.count
+        if dnHoursWithData > 0 && dnGap > 0 {
+            let each = dnGap / UInt64(dnHoursWithData)
+            let rem = dnGap % UInt64(dnHoursWithData)
+            for i in 0..<24 where hasDataArr[i] {
+                dn[i] += each + (i == hasDataArr.firstIndex(where: { $0 })! ? rem : 0)
+            }
+        }
+        if upHoursWithData > 0 && upGap > 0 {
+            let each = upGap / UInt64(upHoursWithData)
+            let rem = upGap % UInt64(upHoursWithData)
+            for i in 0..<24 where hasDataArr[i] {
+                up[i] += each + (i == hasDataArr.firstIndex(where: { $0 })! ? rem : 0)
             }
         }
 
