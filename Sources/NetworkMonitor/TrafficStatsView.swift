@@ -274,72 +274,73 @@ struct TrafficStatsView: View {
             page = nil; return
         }
 
-        // Read all minutely data for the day and aggregate into hours
-        let minutelyData = db.minutelyTraffic(from: startLocal, to: endLocal)
-        var dn = [UInt64](repeating: 0, count: 24)
-        var up = [UInt64](repeating: 0, count: 24)
-        var hasDataArr = [Bool](repeating: false, count: 24)
-        for record in minutelyData {
-            let h = localCal.component(.hour, from: record.time)
-            if h >= 0 && h < 24 {
-                dn[h] += record.down
-                up[h] += record.up
-                hasDataArr[h] = true
-            }
-        }
-
-        // Determine if viewing today (needed for live-data reference)
         let nowLocal = localCal.component(.hour, from: Date())
         let todayLocal = localCal.dateComponents([.year, .month, .day], from: Date())
         guard let tly = todayLocal.year, let tlm = todayLocal.month, let tld = todayLocal.day else { return }
         let todayStr = String(format: "%04d-%02d-%02d", tly, tlm, tld)
         let isToday = (dateStr == todayStr)
 
-        // Use traffic_daily as authoritative total, distribute gap across hours
-        let dailyTotal = db.dailyTraffic(for: dateStr)
-        let refDown = isToday ? engine.todayDown : dailyTotal.down
-        let refUp = isToday ? engine.todayUp : dailyTotal.up
-        let minutelyDnSum = dn.reduce(0, +)
-        let minutelyUpSum = up.reduce(0, +)
-        var dnGap = refDown > minutelyDnSum ? refDown - minutelyDnSum : 0
-        var upGap = refUp > minutelyUpSum ? refUp - minutelyUpSum : 0
-        let dnHoursWithData = hasDataArr.enumerated().filter { $0.element }.count
-        let upHoursWithData = hasDataArr.enumerated().filter { $0.element }.count
-        if dnHoursWithData > 0 && dnGap > 0 {
-            let each = dnGap / UInt64(dnHoursWithData)
-            let rem = dnGap % UInt64(dnHoursWithData)
-            for i in 0..<24 where hasDataArr[i] {
-                dn[i] += each + (i == hasDataArr.firstIndex(where: { $0 })! ? rem : 0)
+        // Read hourly data (aggregated, more reliable) and minutely (for gap fill)
+        let hourlyRecords = db.hourlyTrafficRange(from: startLocal, to: endLocal)
+        let minutelyData = db.minutelyTraffic(from: startLocal, to: endLocal)
+
+        var dn = [UInt64](repeating: 0, count: 24)
+        var up = [UInt64](repeating: 0, count: 24)
+        var hasDataArr = [Bool](repeating: false, count: 24)
+
+        // Fill from hourly table first
+        for r in hourlyRecords {
+            let h = localCal.component(.hour, from: r.hour)
+            if h >= 0 && h < 24 {
+                dn[h] = r.totalDown
+                up[h] = r.totalUp
+                hasDataArr[h] = true
             }
-            // Fill current hour with any remaining live delta
-            if isToday {
-                let afterFill = dn.reduce(0, +)
-                if afterFill < engine.todayDown {
-                    dn[nowLocal] += engine.todayDown - afterFill
+        }
+        // Add current hour's minutely data (not yet aggregated into hourly)
+        for record in minutelyData {
+            let h = localCal.component(.hour, from: record.time)
+            if h >= 0 && h < 24 && dn[h] == 0 {
+                dn[h] += record.down
+                up[h] += record.up
+                hasDataArr[h] = true
+            }
+        }
+
+        // Gap-fill using engine live values for today
+        if isToday {
+            let barSumDn = dn.reduce(0, +)
+            let barSumUp = up.reduce(0, +)
+            let dnHours = hasDataArr.enumerated().filter { $0.element }.map { $0.offset }
+            let upHours = hasDataArr.enumerated().filter { $0.element }.map { $0.offset }
+
+            if !dnHours.isEmpty && engine.todayDown > barSumDn {
+                let gap = engine.todayDown - barSumDn
+                let each = gap / UInt64(dnHours.count)
+                var rem = gap % UInt64(dnHours.count)
+                for h in dnHours {
+                    dn[h] += each + (rem > 0 ? 1 : 0)
+                    if rem > 0 { rem -= 1 }
                 }
             }
-        }
-        if upHoursWithData > 0 && upGap > 0 {
-            let each = upGap / UInt64(upHoursWithData)
-            let rem = upGap % UInt64(upHoursWithData)
-            for i in 0..<24 where hasDataArr[i] {
-                up[i] += each + (i == hasDataArr.firstIndex(where: { $0 })! ? rem : 0)
-            }
-            if isToday {
-                let afterFill = up.reduce(0, +)
-                if afterFill < engine.todayUp {
-                    up[nowLocal] += engine.todayUp - afterFill
+            if !upHours.isEmpty && engine.todayUp > barSumUp {
+                let gap = engine.todayUp - barSumUp
+                let each = gap / UInt64(upHours.count)
+                var rem = gap % UInt64(upHours.count)
+                for h in upHours {
+                    up[h] += each + (rem > 0 ? 1 : 0)
+                    if rem > 0 { rem -= 1 }
                 }
             }
-        }
-        // If no hourly data at all but daily total > 0, put everything in current hour
-        if dnHoursWithData == 0 && refDown > 0 {
-            dn[isToday ? nowLocal : 12] = refDown
-            hasDataArr[isToday ? nowLocal : 12] = true
-        }
-        if upHoursWithData == 0 && refUp > 0 {
-            up[isToday ? nowLocal : 12] = refUp
-            hasDataArr[isToday ? nowLocal : 12] = true
+            // If no historical data at all, put everything in current hour
+            if dnHours.isEmpty && engine.todayDown > 0 {
+                dn[nowLocal] = engine.todayDown
+                hasDataArr[nowLocal] = true
+            }
+            if upHours.isEmpty && engine.todayUp > 0 {
+                up[nowLocal] = engine.todayUp
+                hasDataArr[nowLocal] = true
+            }
         }
 
         let l1 = (0..<24).map { String(format: "%02d:00", $0) }
