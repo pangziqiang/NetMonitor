@@ -8,17 +8,20 @@ APP_NAME="NetworkMonitor"
 BUILD_TYPE="debug"
 INSTALL=false
 RUN=true
+ARCH=""
 for arg in "$@"; do
     case $arg in
         --release|-r) BUILD_TYPE="release" ;;
         --install) INSTALL=true ;;
         --no-run) RUN=false ;;
+        --arch) ARCH="universal" ;;
         --help|-h)
-            echo "Usage: $0 [--release|-r] [--install] [--no-run]"
-            echo "  Default: debug build, no install, auto-run"
+            echo "Usage: $0 [--release|-r] [--install] [--no-run] [--arch]"
+            echo "  Default: debug build, no install, auto-run, native arch"
             echo "  --release, -r: release build"
             echo "  --install: copy to /Applications"
             echo "  --no-run: do not kill/launch the app"
+            echo "  --arch: build universal binary (arm64 + x86_64)"
             exit 0
             ;;
     esac
@@ -32,6 +35,20 @@ else
     BUILD_DIR="$PROJECT_DIR/.build/debug"
     echo "🔨 Building $APP_NAME (debug)..."
     swift build
+fi
+
+# Universal build via xcodebuild
+if [ "$ARCH" = "universal" ]; then
+    echo "🏗️  Building universal binary (arm64 + x86_64)..."
+    xcodebuild -scheme "$APP_NAME" -configuration Release -destination "generic/platform=macOS" ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO 2>&1 | tail -5
+    # Copy from xcodebuild output
+    XCODEBUILD_DIR="$HOME/Library/Developer/Xcode/DerivedData"
+    XCODEBUILD_OUTPUT=$(ls -td "$XCODEBUILD_DIR"/NetworkMonitor-*/Build/Products/Release/NetworkMonitor 2>/dev/null | head -1)
+    if [ -n "$XCODEBUILD_OUTPUT" ]; then
+        mkdir -p "$BUILD_DIR"
+        cp "$XCODEBUILD_OUTPUT" "$BUILD_DIR/$APP_NAME"
+        echo "✅ Universal binary copied to $BUILD_DIR"
+    fi
 fi
 
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
