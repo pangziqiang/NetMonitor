@@ -288,12 +288,21 @@ struct TrafficStatsView: View {
             }
         }
 
+        // Determine if viewing today (needed for live-data reference)
+        let nowLocal = localCal.component(.hour, from: Date())
+        let todayLocal = localCal.dateComponents([.year, .month, .day], from: Date())
+        guard let tly = todayLocal.year, let tlm = todayLocal.month, let tld = todayLocal.day else { return }
+        let todayStr = String(format: "%04d-%02d-%02d", tly, tlm, tld)
+        let isToday = (dateStr == todayStr)
+
         // Use traffic_daily as authoritative total, distribute gap across hours
         let dailyTotal = db.dailyTraffic(for: dateStr)
+        let refDown = isToday ? engine.todayDown : dailyTotal.down
+        let refUp = isToday ? engine.todayUp : dailyTotal.up
         let minutelyDnSum = dn.reduce(0, +)
         let minutelyUpSum = up.reduce(0, +)
-        let dnGap = dailyTotal.down > minutelyDnSum ? dailyTotal.down - minutelyDnSum : 0
-        let upGap = dailyTotal.up > minutelyUpSum ? dailyTotal.up - minutelyUpSum : 0
+        var dnGap = refDown > minutelyDnSum ? refDown - minutelyDnSum : 0
+        var upGap = refUp > minutelyUpSum ? refUp - minutelyUpSum : 0
         let dnHoursWithData = hasDataArr.enumerated().filter { $0.element }.count
         let upHoursWithData = hasDataArr.enumerated().filter { $0.element }.count
         if dnHoursWithData > 0 && dnGap > 0 {
@@ -302,6 +311,13 @@ struct TrafficStatsView: View {
             for i in 0..<24 where hasDataArr[i] {
                 dn[i] += each + (i == hasDataArr.firstIndex(where: { $0 })! ? rem : 0)
             }
+            // Fill current hour with any remaining live delta
+            if isToday {
+                let afterFill = dn.reduce(0, +)
+                if afterFill < engine.todayDown {
+                    dn[nowLocal] += engine.todayDown - afterFill
+                }
+            }
         }
         if upHoursWithData > 0 && upGap > 0 {
             let each = upGap / UInt64(upHoursWithData)
@@ -309,13 +325,22 @@ struct TrafficStatsView: View {
             for i in 0..<24 where hasDataArr[i] {
                 up[i] += each + (i == hasDataArr.firstIndex(where: { $0 })! ? rem : 0)
             }
+            if isToday {
+                let afterFill = up.reduce(0, +)
+                if afterFill < engine.todayUp {
+                    up[nowLocal] += engine.todayUp - afterFill
+                }
+            }
         }
-
-        let nowLocal = localCal.component(.hour, from: Date())
-        let todayLocal = localCal.dateComponents([.year, .month, .day], from: Date())
-        guard let tly = todayLocal.year, let tlm = todayLocal.month, let tld = todayLocal.day else { return }
-        let todayStr = String(format: "%04d-%02d-%02d", tly, tlm, tld)
-        let isToday = (dateStr == todayStr)
+        // If no hourly data at all but daily total > 0, put everything in current hour
+        if dnHoursWithData == 0 && refDown > 0 {
+            dn[isToday ? nowLocal : 12] = refDown
+            hasDataArr[isToday ? nowLocal : 12] = true
+        }
+        if upHoursWithData == 0 && refUp > 0 {
+            up[isToday ? nowLocal : 12] = refUp
+            hasDataArr[isToday ? nowLocal : 12] = true
+        }
 
         let l1 = (0..<24).map { String(format: "%02d:00", $0) }
         let l2 = [String](repeating: "", count: 24)
