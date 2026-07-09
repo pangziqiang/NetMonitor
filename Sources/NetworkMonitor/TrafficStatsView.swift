@@ -307,38 +307,16 @@ struct TrafficStatsView: View {
             }
         }
 
-        // Gap-fill using engine live values for today
+        // Gap-fill: for today, all live delta goes to current hour
         if isToday {
             let barSumDn = dn.reduce(0, +)
             let barSumUp = up.reduce(0, +)
-            let dnHours = hasDataArr.enumerated().filter { $0.element }.map { $0.offset }
-            let upHours = hasDataArr.enumerated().filter { $0.element }.map { $0.offset }
-
-            if !dnHours.isEmpty && engine.todayDown > barSumDn {
-                let gap = engine.todayDown - barSumDn
-                let each = gap / UInt64(dnHours.count)
-                var rem = gap % UInt64(dnHours.count)
-                for h in dnHours {
-                    dn[h] += each + (rem > 0 ? 1 : 0)
-                    if rem > 0 { rem -= 1 }
-                }
-            }
-            if !upHours.isEmpty && engine.todayUp > barSumUp {
-                let gap = engine.todayUp - barSumUp
-                let each = gap / UInt64(upHours.count)
-                var rem = gap % UInt64(upHours.count)
-                for h in upHours {
-                    up[h] += each + (rem > 0 ? 1 : 0)
-                    if rem > 0 { rem -= 1 }
-                }
-            }
-            // If no historical data at all, put everything in current hour
-            if dnHours.isEmpty && engine.todayDown > 0 {
-                dn[nowLocal] = engine.todayDown
+            if engine.todayDown > barSumDn {
+                dn[nowLocal] += engine.todayDown - barSumDn
                 hasDataArr[nowLocal] = true
             }
-            if upHours.isEmpty && engine.todayUp > 0 {
-                up[nowLocal] = engine.todayUp
+            if engine.todayUp > barSumUp {
+                up[nowLocal] += engine.todayUp - barSumUp
                 hasDataArr[nowLocal] = true
             }
         }
