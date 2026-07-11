@@ -28,6 +28,11 @@ NetworkMonitor.app/
 *.tmp
 *.bak
 *.swp
+*.profraw
+*.profdata
+
+# Demo/scratch files
+IOReportNetworkDemo.swift
 
 # AI/ML Tools
 .claude/

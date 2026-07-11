@@ -60,7 +60,7 @@ macOS 菜单栏网络监控应用，实时显示网速、CPU/GPU/内存使用率
 ## 安装
 
 ### 从 Release 下载（推荐）
-1. 前往 [Releases](https://github.com/anomalyco/NetMonitor/releases)
+1. 前往 [Releases](https://github.com/pangziqiang/NetMonitor/releases)
 2. 下载最新的 `NetMonitor.dmg` 或 `NetMonitor-universal.zip`
 3. 打开 DMG，拖拽到 `/Applications`
 4. 首次运行右键「打开」绕过 Gatekeeper
@@ -68,7 +68,7 @@ macOS 菜单栏网络监控应用，实时显示网速、CPU/GPU/内存使用率
 ### 从源码构建
 
 ```bash
-git clone https://github.com/anomalyco/NetMonitor.git
+git clone https://github.com/pangziqiang/NetMonitor.git
 cd NetMonitor
 
 # Debug 构建
@@ -76,7 +76,7 @@ swift build
 
 # Release 构建 + 打包 .app
 bash build-app.sh --release
-open .build/release/NetworkMonitor.app
+open .build/release/NetMonitor.app
 
 # 通用二进制（arm64 + x86_64）
 bash build-app.sh --release --arch
