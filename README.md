@@ -60,16 +60,16 @@ macOS 菜单栏网络监控应用，实时显示网速、CPU/GPU/内存使用率
 ## 安装
 
 ### 从 Release 下载（推荐）
-1. 前往 [Releases](https://github.com/anomalyco/NetworkMonitor/releases)
-2. 下载最新的 `NetworkMonitor.dmg` 或 `NetworkMonitor-universal.zip`
+1. 前往 [Releases](https://github.com/anomalyco/NetMonitor/releases)
+2. 下载最新的 `NetMonitor.dmg` 或 `NetMonitor-universal.zip`
 3. 打开 DMG，拖拽到 `/Applications`
 4. 首次运行右键「打开」绕过 Gatekeeper
 
 ### 从源码构建
 
 ```bash
-git clone https://github.com/anomalyco/NetworkMonitor.git
-cd NetworkMonitor
+git clone https://github.com/anomalyco/NetMonitor.git
+cd NetMonitor
 
 # Debug 构建
 swift build
@@ -96,7 +96,7 @@ swift test --sanitize=thread
 
 ```
 Package.swift
-├── NetworkMonitorCore/           — 纯数据层（无 SwiftUI）
+├── NetMonitorCore/           — 纯数据层（无 SwiftUI）
 │   ├── NetworkMonitorEngine.swift   系统网速（sysctl getifaddrs, 3s tick, EMA 平滑）
 │   ├── SystemMonitor.swift          CPU/内存/GPU 采样（host_processor_info + IOAccelerator）
 │   ├── ThermalMonitor.swift         SMC 温度读取（IOConnectCallStructMethod, Intel+AS）
@@ -109,7 +109,7 @@ Package.swift
 │   ├── ProcessMonitor.swift         进程 CPU/内存/网络（proc_listallpids + nettop CSV 解析）
 │   └── AppConstants.swift           常量定义（Bundle ID + OSLog subsystem）
 │
-├── NetworkMonitor/               — UI 层（SwiftUI + AppKit）
+├── NetMonitor/               — UI 层（SwiftUI + AppKit）
 │   ├── NetworkMonitorApp.swift      @main, AppDelegate, 窗口场景
 │   ├── MenuBarPopover.swift         弹出窗主体 + MiniSparkLine（CGContext crosshair）
 │   ├── StatusItemManager.swift      菜单栏图标 + MenuBarPanel + StatusBarView
@@ -129,7 +129,7 @@ Package.swift
 │   ├── PermissionsView.swift        权限页（占位，待 TCC 接入）
 │   └── ThinScroller.swift           自定义滚动条
 │
-└── NetworkMonitorTests/          — 91 个单元测试
+└── NetMonitorTests/          — 91 个单元测试
     ├── NetworkMonitorEngineTests.swift
     ├── SystemMonitorTests.swift
     ├── ThermalMonitorTests.swift

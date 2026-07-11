@@ -5,7 +5,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="NetworkMonitor"
+APP_NAME="NetMonitor"
 DMG_NAME="${APP_NAME}.dmg"
 VOLUME_NAME="${APP_NAME} Installer"
 DMG_PATH="${PROJECT_DIR}/${DMG_NAME}"

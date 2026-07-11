@@ -8,7 +8,7 @@ SAMPLES=6
 WAIT=5
 
 if [ ! -d "$APP" ]; then
-  echo "用法: $0 <NetworkMonitor.app> [基准文件]"
+  echo "用法: $0 <NetMonitor.app> [基准文件]"
   exit 1
 fi
 
@@ -17,7 +17,7 @@ echo "    App: $APP"
 echo "    采样: ${SAMPLES}次, 间隔 ${WAIT}s"
 
 # 杀掉旧进程
-pkill -f "NetworkMonitor.app" 2>/dev/null || true
+pkill -f "NetMonitor.app" 2>/dev/null || true
 sleep 2
 
 # 启动 App
@@ -30,7 +30,7 @@ TOTAL_MEM=0
 SUCCESS=0
 
 for i in $(seq 1 $SAMPLES); do
-  PID=$(pgrep -f "NetworkMonitor.app/Contents/MacOS" | head -1 || echo "")
+  PID=$(pgrep -f "NetMonitor.app/Contents/MacOS" | head -1 || echo "")
   if [ -z "$PID" ]; then
     echo "   [${i}] App 未运行"
     continue
@@ -45,7 +45,7 @@ for i in $(seq 1 $SAMPLES); do
   sleep $WAIT
 done
 
-pkill -f "NetworkMonitor.app" 2>/dev/null || true
+pkill -f "NetMonitor.app" 2>/dev/null || true
 
 if [ $SUCCESS -eq 0 ]; then
   echo "❌ 采样失败"

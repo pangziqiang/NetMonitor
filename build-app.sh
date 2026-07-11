@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_NAME="NetworkMonitor"
+APP_NAME="NetMonitor"
 
 # Parse arguments
 BUILD_TYPE="debug"
@@ -37,17 +37,11 @@ else
     swift build
 fi
 
-# Universal build via xcodebuild (default)
+# Universal build via swift build (supports both archs in one command since Swift 5.9)
 echo "🏗️  Building universal binary (arm64 + x86_64)..."
-xcodebuild -scheme "$APP_NAME" -configuration Release -destination "generic/platform=macOS" ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO 2>&1 | tail -5
-# Copy from xcodebuild output
-XCODEBUILD_DIR="$HOME/Library/Developer/Xcode/DerivedData"
-XCODEBUILD_OUTPUT=$(ls -td "$XCODEBUILD_DIR"/NetworkMonitor-*/Build/Products/Release/NetworkMonitor 2>/dev/null | head -1)
-if [ -n "$XCODEBUILD_OUTPUT" ]; then
-    mkdir -p "$BUILD_DIR"
-    cp "$XCODEBUILD_OUTPUT" "$BUILD_DIR/$APP_NAME"
-    echo "✅ Universal binary copied to $BUILD_DIR"
-fi
+swift build -c release --arch arm64 --arch x86_64
+cp ".build/apple/Products/Release/$APP_NAME" "$BUILD_DIR/$APP_NAME"
+echo "✅ Universal binary copied to $BUILD_DIR"
 
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 
@@ -60,8 +54,8 @@ cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
 # Copy icon
 if [ -f "$PROJECT_DIR/AppIcon.icns" ]; then
     cp "$PROJECT_DIR/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
-elif [ -f "$PROJECT_DIR/Sources/NetworkMonitor/AppIcon.icns" ]; then
-    cp "$PROJECT_DIR/Sources/NetworkMonitor/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
+elif [ -f "$PROJECT_DIR/Sources/NetMonitor/AppIcon.icns" ]; then
+    cp "$PROJECT_DIR/Sources/NetMonitor/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
 fi
 
 cp "$PROJECT_DIR/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"

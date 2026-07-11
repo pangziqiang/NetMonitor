@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-APP_NAME="NetworkMonitor"
+APP_NAME="NetMonitor"
 BINARY=".build/debug/$APP_NAME"
 
 # 确保已编译

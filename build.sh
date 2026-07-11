@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_NAME="NetworkMonitor"
+APP_NAME="NetMonitor"
 
 echo "🔨 Building $APP_NAME..."
 swift build

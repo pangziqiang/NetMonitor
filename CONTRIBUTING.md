@@ -10,7 +10,7 @@
 
 ### 报告问题
 
-1. 在 [GitHub Issues](https://github.com/anomalyco/NetworkMonitor/issues) 中搜索是否已有相同问题
+1. 在 [GitHub Issues](https://github.com/anomalyco/NetMonitor/issues) 中搜索是否已有相同问题
 2. 如果没有，创建新的 Issue，包含：
    - 问题描述
    - 复现步骤
@@ -62,8 +62,8 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/anomalyco/NetworkMonitor.git
-cd NetworkMonitor
+git clone https://github.com/anomalyco/NetMonitor.git
+cd NetMonitor
 
 # 安装依赖
 brew install sqlite

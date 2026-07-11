@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# NetworkMonitor vs 竞品 — 综合基准测试脚本
+# NetMonitor vs 竞品 — 综合基准测试脚本
 # 对比项: CPU / 内存 / 线程 / 启动时间 / 磁盘占用 / 架构
 # ============================================================
 set -euo pipefail
@@ -20,7 +20,7 @@ WARMUP=5
 mkdir -p "$RESULTS_DIR"
 
 APPS=(
-  "NetworkMonitor:NetworkMonitor"
+  "NetMonitor:NetMonitor"
   "HagimiMonitor:HagimiMonitor"
   "Stats:Stats"
   "NetWorker Pro:NetWorker Pro"
@@ -276,7 +276,7 @@ best_fmt() { local v=$1 b=$2 u=$3; [ "$(echo "$v == $b" | bc -l 2>/dev/null)" = 
   echo ""
   echo "## 综合评分表"
   echo ""
-  echo "| 指标 | NetworkMonitor | HagimiMonitor | Stats | NetWorker Pro |"
+  echo "| 指标 | NetMonitor | HagimiMonitor | Stats | NetWorker Pro |"
   echo "|------|:-------------:|:-------------:|:-----:|:-------------:|"
 
   # CPU avg row

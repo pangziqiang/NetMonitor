@@ -30,7 +30,7 @@ func formatBytes(_ bytes: UInt64) -> String {
 
 // MARK: - IOReport 网络监控类
 
-final class IOReportNetworkMonitor {
+final class IOReportNetMonitor {
     private var subscription: IOReportSubscriptionRef?
     private let queue: DispatchQueue
     private var lastValues: [String: UInt64] = [:]
@@ -90,7 +90,7 @@ final class IOReportNetworkMonitor {
         
         // 5. 设置回调处理函数
         let callback: IOReportCallback = { context, reportRef in
-            let monitor = Unmanaged<IOReportNetworkMonitor>.fromOpaque(context!).takeUnretainedValue()
+            let monitor = Unmanaged<IOReportNetMonitor>.fromOpaque(context!).takeUnretainedValue()
             monitor.handleReport(reportRef!)
         }
         
@@ -164,7 +164,7 @@ macOS \(ProcessInfo.processInfo.operatingSystemVersionString) | \(ProcessInfo.pr
 ========================================
 """)
 
-let monitor = IOReportNetworkMonitor()
+let monitor = IOReportNetMonitor()
 
 do {
     try monitor.start()

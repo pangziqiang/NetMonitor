@@ -16,8 +16,9 @@ DerivedData/
 ._*
 
 # Build output
+NetMonitor.app/
+NetMonitor.dmg
 NetworkMonitor.app/
-NetworkMonitor.dmg
 
 # IDE
 .vscode/

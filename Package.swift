@@ -2,26 +2,26 @@
 import PackageDescription
 
 let package = Package(
-    name: "NetworkMonitor",
+    name: "NetMonitor",
     platforms: [.macOS(.v14)],
     targets: [
         .target(
-            name: "NetworkMonitorCore",
-            path: "Sources/NetworkMonitorCore",
+            name: "NetMonitorCore",
+            path: "Sources/NetMonitorCore",
             linkerSettings: [
                 .linkedLibrary("sqlite3"),
                 .linkedFramework("IOKit")
             ]
         ),
         .executableTarget(
-            name: "NetworkMonitor",
-            dependencies: ["NetworkMonitorCore"],
-            path: "Sources/NetworkMonitor"
+            name: "NetMonitor",
+            dependencies: ["NetMonitorCore"],
+            path: "Sources/NetMonitor"
         ),
         .testTarget(
-            name: "NetworkMonitorTests",
-            dependencies: ["NetworkMonitorCore"],
-            path: "Tests/NetworkMonitorTests"
+            name: "NetMonitorTests",
+            dependencies: ["NetMonitorCore"],
+            path: "Tests/NetMonitorTests"
         )
     ]
 )
