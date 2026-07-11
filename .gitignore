@@ -39,3 +39,13 @@ IOReportNetworkDemo.swift
 .mimocode/
 .cursor/
 .opencode/
+.memory/
+AGENTS.md
+
+# Local tracking
+TODO.md
+COMPARISON_REPORT.md
+
+# Benchmark data
+benchmark-report/
+.github/performance_baseline.txt*
