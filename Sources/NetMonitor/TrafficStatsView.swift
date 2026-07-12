@@ -306,53 +306,55 @@ struct TrafficStatsView: View {
     // MARK: - Process Table
 
     private func processTable(_ page: ProcessPage) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(L10n.tr("Process")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(maxWidth: .infinity, alignment: .leading)
-                Text(L10n.tr("Download")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 120, alignment: .trailing)
-                Text(L10n.tr("Upload")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 120, alignment: .trailing)
-                Text(L10n.tr("Total")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 120, alignment: .trailing)
-                Text(L10n.tr("%")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 60, alignment: .trailing)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(theme.textMuted.opacity(0.03))
-
-            Divider()
-
-            ForEach(page.topProcesses) { proc in
+        ScrollView(.horizontal, showsIndicators: true) {
+            VStack(spacing: 0) {
                 HStack {
-                    Text(proc.name)
-                        .font(.system(size: 12))
-                        .foregroundColor(theme.textPrimary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(barFormatBytes(proc.down))
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.downloadColor)
-                        .frame(width: 120, alignment: .trailing)
-                    Text(barFormatBytes(proc.up))
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.uploadColor)
-                        .frame(width: 120, alignment: .trailing)
-                    Text(barFormatBytes(proc.down + proc.up))
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(theme.textPrimary)
-                        .frame(width: 120, alignment: .trailing)
-                    Text(String(format: "%.1f%%", Double(proc.down + proc.up) / Double(max(1, page.totalDown + page.totalUp)) * 100))
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(theme.textMuted)
-                        .frame(width: 60, alignment: .trailing)
+                    Text(L10n.tr("Process")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(L10n.tr("Download")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 120, alignment: .trailing)
+                    Text(L10n.tr("Upload")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 120, alignment: .trailing)
+                    Text(L10n.tr("Total")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 120, alignment: .trailing)
+                    Text(L10n.tr("%")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 60, alignment: .trailing)
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(theme.appBg)
-                Divider().opacity(0.1)
+                .padding(.vertical, 8)
+                .background(theme.textMuted.opacity(0.03))
+
+                Divider()
+
+                ForEach(page.topProcesses) { proc in
+                    HStack {
+                        Text(proc.name)
+                            .font(.system(size: 12))
+                            .foregroundColor(theme.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(barFormatBytes(proc.down))
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.downloadColor)
+                            .frame(width: 120, alignment: .trailing)
+                        Text(barFormatBytes(proc.up))
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.uploadColor)
+                            .frame(width: 120, alignment: .trailing)
+                        Text(barFormatBytes(proc.down + proc.up))
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(theme.textPrimary)
+                            .frame(width: 120, alignment: .trailing)
+                        Text(String(format: "%.1f%%", Double(proc.down + proc.up) / Double(max(1, page.totalDown + page.totalUp)) * 100))
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(theme.textMuted)
+                            .frame(width: 60, alignment: .trailing)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(theme.appBg)
+                    Divider().opacity(0.1)
+                }
             }
+            .background(theme.textMuted.opacity(0.03))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
-        .background(theme.textMuted.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Process Chart Section
@@ -371,7 +373,7 @@ struct TrafficStatsView: View {
                 let maxVal = max(dnData.max() ?? 0, upData.max() ?? 0)
                 let niceMax = maxVal > 0 ? barNiceMax([maxVal]) : 1
 
-                HStack(spacing: 16) {
+                VStack(spacing: 16) {
                     BarChartRenderer(
                         data: dnData, color: .downloadColor,
                         labels1: labels1, labels2: labels2,
