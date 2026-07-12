@@ -6,8 +6,12 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="NetMonitor"
-DMG_NAME="${APP_NAME}.dmg"
-VOLUME_NAME="${APP_NAME} Installer"
+
+# 从 Info.plist 读取版本号
+INFO_PLIST="${PROJECT_DIR}/Resources/Info.plist"
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO_PLIST" 2>/dev/null || echo "unknown")
+DMG_NAME="${APP_NAME}-${VERSION}.dmg"
+VOLUME_NAME="${APP_NAME} ${VERSION}"
 DMG_PATH="${PROJECT_DIR}/${DMG_NAME}"
 
 # 检查应用是否存在
@@ -18,8 +22,8 @@ if [ ! -d "$APP_PATH" ]; then
     exit 1
 fi
 
-# 清理旧的 DMG
-rm -f "$DMG_PATH"
+# 清理旧版本 DMG
+rm -f "${PROJECT_DIR}/${APP_NAME}"-*.dmg
 
 # 创建临时目录
 TEMP_DIR=$(mktemp -d)

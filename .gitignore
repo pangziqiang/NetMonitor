@@ -17,7 +17,7 @@ DerivedData/
 
 # Build output
 NetMonitor.app/
-NetMonitor.dmg
+NetMonitor-*.dmg
 NetworkMonitor.app/
 
 # IDE
