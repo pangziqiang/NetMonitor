@@ -40,6 +40,8 @@ public class ProcessMonitor: ObservableObject {
     private var lastNetworkTime = Date()
     private var networkHasBaseline = false
 
+    private let processNetworkReader = ProcessNetworkReader.shared
+
     private var lastTicks: [Int32: UInt64] = [:]
     private var lastSampleTime = Date()
     private var hasBaseline = false
@@ -47,6 +49,11 @@ public class ProcessMonitor: ObservableObject {
 
     public init() {
         processorCount = ProcessInfo.processInfo.processorCount
+        processNetworkReader.start()
+    }
+
+    public func start() {
+        processNetworkReader.start()
     }
 
     private let tickQueue = DispatchQueue(label: "com.opencode.networkmonitor.process", qos: .utility)
@@ -208,6 +215,8 @@ public class ProcessMonitor: ObservableObject {
         topByMemory = []
         topByCPUTotal = []
         selfInfo = nil
+
+        processNetworkReader.stop()
 
         networkQueue.async { [weak self] in
             guard let self else { return }

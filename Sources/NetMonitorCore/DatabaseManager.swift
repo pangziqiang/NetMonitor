@@ -287,6 +287,42 @@ public class DatabaseManager {
         peakLock.unlock()
     }
 
+    /// Accumulates per-process traffic for the current minute using UPSERT.
+    public func accumulateProcessTraffic(pid: Int32, name: String, startTime: time_t, down: UInt64, up: UInt64) {
+        guard down > 0 || up > 0 else { return }
+        let minute = iso8601String(from: Date())
+        let minuteKey = String(minute.prefix(16)) + ":00.000Z"
+
+        queue.async { [weak self] in
+            guard let self, !self.closed else { return }
+            guard let db = self.db else { return }
+            var stmt: OpaquePointer?
+            let sql = """
+                INSERT INTO process_traffic (pid, name, start_time, minute, bytes_down, bytes_up)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(pid, start_time, minute) DO UPDATE SET
+                    bytes_down = bytes_down + excluded.bytes_down,
+                    bytes_up = bytes_up + excluded.bytes_up,
+                    name = excluded.name
+            """
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                os_log(.error, log: log, "accumulateProcessTraffic prepare failed: %{private}@", String(cString: sqlite3_errmsg(db)))
+                return
+            }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_int(stmt, 1, pid)
+            sqlite3_bind_text(stmt, 2, name, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int64(stmt, 3, Int64(startTime))
+            sqlite3_bind_text(stmt, 4, minuteKey, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int64(stmt, 5, Int64(down))
+            sqlite3_bind_int64(stmt, 6, Int64(up))
+            let rc = sqlite3_step(stmt)
+            if rc != SQLITE_DONE {
+                os_log(.error, log: log, "accumulateProcessTraffic step failed: %d", rc)
+            }
+        }
+    }
+
     private func flushMinute() {
         accumLock.lock()
         let down = minuteAccumDown
@@ -1150,11 +1186,99 @@ public class DatabaseManager {
                 os_log(.error, log: log, "clearTables COMMIT failed: %d", rc)
                 sqlite3_free(errMsg)
             }
+}
+    }
+
+    // MARK: - Process Traffic Queries
+
+    /// Returns top N processes by total traffic in the given time range.
+    public func topProcessesTraffic(from: Date, to: Date, limit: Int = 20) -> [(pid: Int32, name: String, startTime: time_t, down: UInt64, up: UInt64)] {
+        let fromStr = iso8601String(from: from)
+        let toStr = iso8601String(from: to)
+        return queue.sync {
+            guard let db else { return [] }
+            var stmt: OpaquePointer?
+            let sql = """
+                SELECT pid, name, start_time, SUM(bytes_down), SUM(bytes_up)
+                FROM process_traffic
+                WHERE minute >= ? AND minute <= ?
+                GROUP BY pid, start_time, name
+                ORDER BY (SUM(bytes_down) + SUM(bytes_up)) DESC
+                LIMIT ?
+            """
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, fromStr, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, toStr, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(stmt, 3, Int32(limit))
+            var result: [(Int32, String, time_t, UInt64, UInt64)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let pid = Int32(sqlite3_column_int(stmt, 0))
+                guard let namePtr = sqlite3_column_text(stmt, 1) else { continue }
+                let name = String(cString: namePtr)
+                let startTime = time_t(sqlite3_column_int64(stmt, 2))
+                let down = UInt64(sqlite3_column_int64(stmt, 3))
+                let up = UInt64(sqlite3_column_int64(stmt, 4))
+                result.append((pid, name, startTime, down, up))
+            }
+            return result
+        }
+    }
+
+    /// Returns per-minute traffic history for a specific process (for charting).
+    public func processTrafficHistory(pid: Int32, startTime: time_t, from: Date, to: Date) -> [(minute: Date, down: UInt64, up: UInt64)] {
+        let fromStr = iso8601String(from: from)
+        let toStr = iso8601String(from: to)
+        return queue.sync {
+            guard let db else { return [] }
+            var stmt: OpaquePointer?
+            let sql = "SELECT minute, bytes_down, bytes_up FROM process_traffic WHERE pid = ? AND start_time = ? AND minute >= ? AND minute <= ? ORDER BY minute ASC"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_int(stmt, 1, pid)
+            sqlite3_bind_int64(stmt, 2, Int64(startTime))
+            sqlite3_bind_text(stmt, 3, fromStr, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 4, toStr, -1, SQLITE_TRANSIENT)
+            var result: [(Date, UInt64, UInt64)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let textPtr = sqlite3_column_text(stmt, 0),
+                      let minute = iso8601Date(from: String(cString: textPtr)) else { continue }
+                let down = UInt64(sqlite3_column_int64(stmt, 1))
+                let up = UInt64(sqlite3_column_int64(stmt, 2))
+                result.append((minute, down, up))
+            }
+            return result
+        }
+    }
+
+    /// Async version for UI thread safety.
+    public func processTrafficHistoryAsync(pid: Int32, startTime: time_t, from: Date, to: Date, completion: @escaping ([(minute: Date, down: UInt64, up: UInt64)]) -> Void) {
+        let fromStr = iso8601String(from: from)
+        let toStr = iso8601String(from: to)
+        guard let rdb = readDb else { completion([]); return }
+        let formatter = makeISO8601Formatter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            var stmt: OpaquePointer?
+            let sql = "SELECT minute, bytes_down, bytes_up FROM process_traffic WHERE pid = ? AND start_time = ? AND minute >= ? AND minute <= ? ORDER BY minute ASC"
+            guard sqlite3_prepare_v2(rdb, sql, -1, &stmt, nil) == SQLITE_OK else { completion([]); return }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_int(stmt, 1, pid)
+            sqlite3_bind_int64(stmt, 2, Int64(startTime))
+            sqlite3_bind_text(stmt, 3, fromStr, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 4, toStr, -1, SQLITE_TRANSIENT)
+            var result: [(Date, UInt64, UInt64)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let textPtr = sqlite3_column_text(stmt, 0),
+                      let minute = formatter.date(from: String(cString: textPtr)) else { continue }
+                let down = UInt64(sqlite3_column_int64(stmt, 1))
+                let up = UInt64(sqlite3_column_int64(stmt, 2))
+                result.append((minute, down, up))
+            }
+            completion(result)
         }
     }
 }
 
-// Thread-safe ISO8601 formatter factory
 private func makeISO8601Formatter() -> ISO8601DateFormatter {
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
