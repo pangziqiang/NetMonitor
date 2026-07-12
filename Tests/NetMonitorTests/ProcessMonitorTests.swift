@@ -115,6 +115,24 @@ struct ProcessMonitorTests {
         #expect(result[12345]?.upload == UInt64.max)
     }
 
+    @Test("parseNettopOutput handles macOS Sequoia format (bytes_in/bytes_out, unnamed cmd col)")
+    func parseNettopSequoiaFormat() {
+        // nettop -P -L 1 -n output on macOS Sequoia:
+        // time,<empty>,interface,state,bytes_in,bytes_out,rx_dupe,...
+        // timestamp,process.pid,,,,bytes_in,bytes_out,...
+        let output = """
+        time,,interface,state,bytes_in,bytes_out,rx_dupe,rx_ooo,re-tx,rtt_avg,rcvsize,tx_win,tc_class,tc_mgt,cc_algo,P,C,R,W,arch,
+        20:28:33.450194,apsd.135,,,27933,71061,0,0,0,,,,,,,,,,,,
+        20:28:33.450202,WeChat.9179,,,46517,28330,0,0,0,,,,,,,,,,,,
+        """
+        let result = ProcessMonitor.parseNettopOutput(output)
+        #expect(result.count == 2)
+        #expect(result[135]?.download == 27933)
+        #expect(result[135]?.upload == 71061)
+        #expect(result[9179]?.download == 46517)
+        #expect(result[9179]?.upload == 28330)
+    }
+
     // MARK: - ProcessMonitor basic state
 
     @Test("ProcessMonitor initial state")

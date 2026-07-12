@@ -165,8 +165,7 @@ public class ProcessMonitor: ObservableObject {
     private func readNettop() -> [Int32: (download: UInt64, upload: UInt64)]? {
         let task = Process()
         task.launchPath = "/usr/bin/nettop"
-        // Minimal columns: command, pid, rx_bytes, tx_bytes
-        task.arguments = ["-P", "-L", "1", "-n", "-k", "command,rx_bytes,tx_bytes"]
+        task.arguments = ["-P", "-L", "1", "-n"]
 
         let pipe = Pipe()
         task.standardOutput = pipe
@@ -182,9 +181,9 @@ public class ProcessMonitor: ObservableObject {
                 task.terminate()
                 semaphore.signal()
             }
-            DispatchQueue.global().asyncAfter(deadline: .now() + Self.nettopTimeout, execute: timeoutWork)
-            try task.run()
             task.terminationHandler = { _ in semaphore.signal() }
+            try task.run()
+            DispatchQueue.global().asyncAfter(deadline: .now() + Self.nettopTimeout, execute: timeoutWork)
         } catch {
             LogService.error("nettop_launch_failed", detail: error.localizedDescription)
             return nil
@@ -247,24 +246,46 @@ public class ProcessMonitor: ObservableObject {
         var result: [Int32: (download: UInt64, upload: UInt64)] = [:]
         var header: [String] = []
         var headerParsed = false
-        
+
         output.enumerateLines { line, _ in
             guard !line.hasPrefix("#") else { return }
-            let parts = line.split(separator: ",")
+            let parts = line.split(separator: ",", omittingEmptySubsequences: false)
             if !headerParsed {
                 header = parts.map(String.init)
                 headerParsed = true
                 return
             }
             guard parts.count >= header.count else { return }
-            
-            // Find column indices dynamically
-            let cmdIdx = header.firstIndex(of: "command") ?? 0
-            let rxIdx = header.firstIndex(of: "rx_bytes") ?? 1
-            let txIdx = header.firstIndex(of: "tx_bytes") ?? 2
-            
+
+            // macOS Sonoma: "time", "", "interface", "state", "bytes_in", "bytes_out", ...
+            // macOS older: "command","rx_bytes","tx_bytes",...
+            let cmdIdx: Int
+            if let idx = header.firstIndex(of: "command") {
+                cmdIdx = idx
+            } else {
+                cmdIdx = 1 // unnamed column after "time"
+            }
+
+            let rxIdx: Int
+            if let idx = header.firstIndex(of: "bytes_in") {
+                rxIdx = idx
+            } else if let idx = header.firstIndex(of: "rx_bytes") {
+                rxIdx = idx
+            } else {
+                rxIdx = 4
+            }
+
+            let txIdx: Int
+            if let idx = header.firstIndex(of: "bytes_out") {
+                txIdx = idx
+            } else if let idx = header.firstIndex(of: "tx_bytes") {
+                txIdx = idx
+            } else {
+                txIdx = 5
+            }
+
             guard parts.count > max(cmdIdx, rxIdx, txIdx) else { return }
-            
+
             let namePid = parts[cmdIdx].split(separator: ".")
             guard let pidStr = namePid.last, let pid = Int32(pidStr),
                   let download = UInt64(parts[rxIdx]),
