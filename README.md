@@ -48,7 +48,7 @@ macOS 菜单栏网络监控应用，实时显示网速、CPU/GPU/内存使用率
 
 ## 截图
 
-> 截图待补充
+> 运行截图待添加（欢迎贡献！）
 
 ## 系统要求
 
@@ -59,7 +59,13 @@ macOS 菜单栏网络监控应用，实时显示网速、CPU/GPU/内存使用率
 
 ## 安装
 
-### 从 Release 下载（推荐）
+### Homebrew（推荐）
+
+```bash
+brew install --cask netmonitor
+```
+
+### 从 Release 下载
 1. 前往 [Releases](https://github.com/pangziqiang/NetMonitor/releases)
 2. 下载最新的 `NetMonitor.dmg` 或 `NetMonitor-universal.zip`
 3. 打开 DMG，拖拽到 `/Applications`
@@ -97,7 +103,7 @@ swift test --sanitize=thread
 ```
 Package.swift
 ├── NetMonitorCore/           — 纯数据层（无 SwiftUI）
-│   ├── NetworkMonitorEngine.swift   系统网速（sysctl getifaddrs, 3s tick, EMA 平滑）
+│   ├── NetworkMonitorEngine.swift   系统网速（IOReport + getifaddrs, 5s tick, EMA 平滑）
 │   ├── SystemMonitor.swift          CPU/内存/GPU 采样（host_processor_info + IOAccelerator）
 │   ├── ThermalMonitor.swift         SMC 温度读取（IOConnectCallStructMethod, Intel+AS）
 │   ├── DatabaseManager.swift        SQLite 流量存储（15s 刷盘, os_log 错误日志）
@@ -106,7 +112,8 @@ Package.swift
 │   ├── L10n.swift                   中英文国际化
 │   ├── ChartCalc.swift              图表计算辅助
 │   ├── VisibilityHelper.swift       进程可见性检测
-│   ├── ProcessMonitor.swift         进程 CPU/内存/网络（proc_listallpids + nettop CSV 解析）
+│   ├── ProcessNetworkReader.swift    nettop 子进程管理（进程级流量解析）
+│   ├── ProcessMonitor.swift          进程 CPU/内存/网络（proc_listallpids + nettop CSV）
 │   └── AppConstants.swift           常量定义（Bundle ID + OSLog subsystem）
 │
 ├── NetMonitor/               — UI 层（SwiftUI + AppKit）
@@ -129,7 +136,7 @@ Package.swift
 │   ├── PermissionsView.swift        权限页（占位，待 TCC 接入）
 │   └── ThinScroller.swift           自定义滚动条
 │
-└── NetMonitorTests/          — 91 个单元测试
+└── NetMonitorTests/          — 92 个单元测试
     ├── NetworkMonitorEngineTests.swift
     ├── SystemMonitorTests.swift
     ├── ThermalMonitorTests.swift
@@ -150,7 +157,7 @@ Package.swift
 - **数据**: IOKit, SQLite3 (C API), sysctl, proc_pidinfo, nettop
 - **最低系统**: macOS 14+
 - **包管理**: Swift Package Manager
-- **CI**: GitHub Actions (lint, test, thread-sanitizer, release build, universal binary, format check, quality script)
+- **CI**: GitHub Actions (lint, test, thread-sanitizer, release build, universal binary, DMG)
 
 ## 权限
 
@@ -164,6 +171,14 @@ Package.swift
 所有数据只读，不修改系统设置，不上传任何数据。
 
 ## 更新记录
+
+### v1.11.0 (2026-07-14)
+- **修复**: COMMIT 错误不再静默丢弃，磁盘满时可记录
+- **修复**: 权限页改为显示实际运行时状态
+- **修复**: 数据库测试全部通过 (92/92)
+- **优化**: nettop 失败重试增加指数退避
+- **优化**: nettop 轮询间隔从 3s 延长到 5s
+- **CI**: release workflow 加入 DMG 打包 + GitHub Release
 
 ### v1.10.0 (2026-07-12)
 - **修复**: macOS Sequoia 上「按网络」排序不显示的问题 — nettop 列名从 `rx_bytes/tx_bytes` 改为 `bytes_in/bytes_out`，进程名从 `command` 列移到无名列

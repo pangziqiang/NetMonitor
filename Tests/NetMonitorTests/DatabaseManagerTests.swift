@@ -9,6 +9,7 @@ struct DatabaseManagerTests {
         let db = try DatabaseManager(path: ":memory:")
         db.accumulateTraffic(down: 1024, up: 512)
         db.accumulateTraffic(down: 2048, up: 1024)
+        db.flushPendingTrafficSync()
         let today = db.todayTraffic()
         #expect(today.down == 3072)
         #expect(today.up == 1536)
@@ -17,6 +18,7 @@ struct DatabaseManagerTests {
     @Test func databaseManagerClearAllTraffic() throws {
         let db = try DatabaseManager(path: ":memory:")
         db.accumulateTraffic(down: 100, up: 50)
+        db.flushPendingTrafficSync()
         let before = db.todayTraffic()
         #expect(before.down == 100)
         #expect(before.up == 50)
@@ -31,6 +33,7 @@ struct DatabaseManagerTests {
     @Test func databaseManagerDailyTraffic() throws {
         let db = try DatabaseManager(path: ":memory:")
         db.accumulateTraffic(down: 500, up: 200)
+        db.flushPendingTrafficSync()
         let daily = db.dailyTraffic(days: 7)
         #expect(daily.count == 1)
         #expect(daily[0].down == 500)
@@ -58,6 +61,7 @@ struct DatabaseManagerTests {
         for i in 1...100 {
             db.accumulateTraffic(down: UInt64(i), up: UInt64(i * 2))
         }
+        db.flushPendingTrafficSync()
         let today = db.todayTraffic()
         #expect(today.down == 5050) // 1+2+...+100
         #expect(today.up == 10100) // 2+4+...+200
@@ -73,8 +77,10 @@ struct DatabaseManagerTests {
     @Test func databaseManagerClearAndReaccumulate() throws {
         let db = try DatabaseManager(path: ":memory:")
         db.accumulateTraffic(down: 100, up: 50)
+        db.flushPendingTrafficSync()
         db.clearAllTraffic(confirm: true)
         db.accumulateTraffic(down: 200, up: 100)
+        db.flushPendingTrafficSync()
         let today = db.todayTraffic()
         #expect(today.down == 200)
         #expect(today.up == 100)
@@ -96,6 +102,7 @@ struct DatabaseManagerTests {
     @Test func exportDailyCSVContainsData() throws {
         let db = try DatabaseManager(path: ":memory:")
         db.accumulateTraffic(down: 1024, up: 512)
+        db.flushPendingTrafficSync()
         let now = Date()
         let from = Calendar.current.date(byAdding: .day, value: -1, to: now)!
         let csv = db.exportDailyCSV(from: from, to: now)
@@ -117,6 +124,7 @@ struct DatabaseManagerTests {
     @Test func exportDailyJSONContainsData() throws {
         let db = try DatabaseManager(path: ":memory:")
         db.accumulateTraffic(down: 2048, up: 1024)
+        db.flushPendingTrafficSync()
         let now = Date()
         let from = Calendar.current.date(byAdding: .day, value: -1, to: now)!
         let json = db.exportDailyJSON(from: from, to: now)
@@ -164,6 +172,7 @@ struct DatabaseManagerTests {
     @Test func dailyTrafficRangeQuery() throws {
         let db = try DatabaseManager(path: ":memory:")
         db.accumulateTraffic(down: 100, up: 50)
+        db.flushPendingTrafficSync()
         let now = Date()
         let from = Calendar.current.date(byAdding: .day, value: -1, to: now)!
         let result = db.dailyTraffic(from: from, to: now)

@@ -46,7 +46,7 @@ jobs:
       - name: Build release binary
         run: swift build -c release
       - name: Verify binary exists
-        run: test -f .build/release/NetworkMonitor
+        run: test -f .build/release/NetMonitor
 
   build-universal:
     name: Build Universal Binary
@@ -55,21 +55,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build universal (arm64 + x86_64)
+        run: swift build -c release --arch arm64 --arch x86_64
+      - name: Verify universal binary
         run: |
-          xcodebuild -scheme NetworkMonitor -configuration Release \
-            -destination "generic/platform=macOS" \
-            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
-            2>&1 | tail -20
-      - name: Find and copy binary
-        run: |
-          BIN=$(ls -td ~/Library/Developer/Xcode/DerivedData/NetworkMonitor-*/Build/Products/Release/NetworkMonitor 2>/dev/null | head -1)
-          if [ -n "$BIN" ] && [ -f "$BIN" ]; then
-            mkdir -p .build/release
-            cp "$BIN" .build/release/NetworkMonitor-universal
-            echo "Universal binary: $(file .build/release/NetworkMonitor-universal)"
-          else
-            echo "⚠️ xcodebuild output not found, skipping universal copy"
-          fi
+          file .build/apple/Products/Release/NetMonitor
 
   check-format:
     name: Check Format

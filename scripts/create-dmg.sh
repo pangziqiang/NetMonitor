@@ -1,65 +1,48 @@
 #!/bin/bash
-# 创建 DMG 安装包
-# 用法: ./create-dmg.sh [--release]
-
+# Create NetMonitor DMG for distribution
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="NetMonitor"
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+BUILD_DIR="$PROJECT_DIR/.build"
 
-# 从 Info.plist 读取版本号
-INFO_PLIST="${PROJECT_DIR}/Resources/Info.plist"
-VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO_PLIST" 2>/dev/null || echo "unknown")
-DMG_NAME="${APP_NAME}-${VERSION}.dmg"
-VOLUME_NAME="${APP_NAME} ${VERSION}"
-DMG_PATH="${PROJECT_DIR}/${DMG_NAME}"
-
-# 检查应用是否存在
-APP_PATH="${PROJECT_DIR}/.build/release/${APP_NAME}.app"
-if [ ! -d "$APP_PATH" ]; then
-    echo "❌ 应用不存在: $APP_PATH"
-    echo "请先运行: ./build-app.sh --release"
-    exit 1
-fi
-
-# 清理旧版本 DMG
-rm -f "${PROJECT_DIR}/${APP_NAME}"-*.dmg
-
-# 创建临时目录
-TEMP_DIR=$(mktemp -d)
-TEMP_APP="${TEMP_DIR}/${APP_NAME}.app"
-TEMP_LINK="${TEMP_DIR}/Applications"
-
-echo "📦 创建 DMG 安装包..."
-
-# 复制应用到临时目录
-cp -R "$APP_PATH" "$TEMP_APP"
-
-# 创建 Applications 快捷方式
-ln -s /Applications "$TEMP_LINK"
-
-# 创建 DMG
-hdiutil create \
-    -volname "$VOLUME_NAME" \
-    -srcfolder "$TEMP_DIR" \
-    -ov \
-    -format UDZO \
-    -imagekey zlib-level=9 \
-    "$DMG_PATH"
-
-# 清理临时目录
-rm -rf "$TEMP_DIR"
-
-# 验证 DMG
-if [ -f "$DMG_PATH" ]; then
-    echo "✅ DMG 创建成功: $DMG_PATH"
-    echo "📊 文件大小: $(du -h "$DMG_PATH" | cut -f1)"
-    echo ""
-    echo "使用方法:"
-    echo "1. 双击打开 ${DMG_NAME}"
-    echo "2. 将 ${APP_NAME}.app 拖动到 Applications 文件夹"
-    echo "3. 从 Applications 启动应用"
+# find the .app bundle
+if [ -d "$PROJECT_DIR/$APP_NAME.app" ]; then
+    SRC_APP="$PROJECT_DIR/$APP_NAME.app"
+elif [ -d "$BUILD_DIR/debug/$APP_NAME.app" ]; then
+    SRC_APP="$BUILD_DIR/debug/$APP_NAME.app"
 else
-    echo "❌ DMG 创建失败"
+    echo "❌ $APP_NAME.app not found"
     exit 1
 fi
+
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+DMG_NAME="$APP_NAME-$VERSION.dmg"
+DMG_DIR="$BUILD_DIR/dmg"
+DMG_PATH="$PROJECT_DIR/$APP_NAME.dmg"
+
+echo "📦 Creating DMG: $DMG_PATH"
+echo "   App: $SRC_APP"
+echo "   Version: $VERSION"
+
+rm -rf "$DMG_DIR" "$DMG_PATH"
+mkdir -p "$DMG_DIR"
+cp -R "$SRC_APP" "$DMG_DIR/"
+
+# Create Applications folder symlink for drag-to-install
+ln -s /Applications "$DMG_DIR/Applications"
+
+# Strip quarantine if it was copied from a quarantined location
+xattr -d com.apple.quarantine "$DMG_DIR/$APP_NAME.app" 2>/dev/null || true
+
+# Create DMG
+hdiutil create -volname "$APP_NAME" \
+    -srcfolder "$DMG_DIR" \
+    -ov -format UDZO \
+    "$DMG_PATH" \
+    -imagekey zlib-level=9
+
+# Cleanup
+rm -rf "$DMG_DIR"
+
+echo "✅ DMG created: $DMG_PATH ($(du -sh "$DMG_PATH" | cut -f1))"
