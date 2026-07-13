@@ -182,17 +182,6 @@ Package.swift
 - **优化**: nettop 轮询间隔从 3s 延长到 5s
 - **CI**: release workflow 加入 DMG 打包 + GitHub Release
 
-### v1.10.0 (2026-07-12)
-- **修复**: macOS Sequoia 上「按网络」排序不显示的问题 — nettop 列名从 `rx_bytes/tx_bytes` 改为 `bytes_in/bytes_out`，进程名从 `command` 列移到无名列
-- **修复**: nettop terminationHandler 竞态条件导致 15s 超时无数据
-- **优化**: 移除无意义的 `-k` 参数，`split` 保留空字段避免列偏移
-- **测试**: 新增 Sequoia 格式解析测试用例
-
-### v1.9.0 (2026-07-09)
-- IOReport 推送式监控（Apple Silicon 回调式 CPU/网络，Intel 优雅降级 getifaddrs/host_processor_info）
-- 全局线程安全审计修复（14 Critical + 26 High）
-- 进程网络排序、CPU 总排序、四模式排序按钮统一
-- 流量统计日/周/年视图、统一深色背景、菜单栏预览行
 
 ## 已知限制
 
