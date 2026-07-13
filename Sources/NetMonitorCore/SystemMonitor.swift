@@ -211,7 +211,7 @@ public final class SystemMonitor: ObservableObject, @unchecked Sendable {
             }
         }
         
-        timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.tick()
         }
