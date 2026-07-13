@@ -44,6 +44,7 @@ struct TrafficStatsView: View {
     @State private var selectedDateStr: String = ""
     @State private var availableDateStrs: [String] = []
     @State private var refreshTimer: Timer?
+    @State private var minutelyLoadedForToday = false
 
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
     private let cfg = BarChartConfig.shared
@@ -65,6 +66,7 @@ struct TrafficStatsView: View {
         .frame(minWidth: cfg.pW, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
         .background(theme.appBg)
         .onAppear {
+            minutelyLoadedForToday = false
             refreshTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
                 DatabaseManager.shared?.flushPendingTrafficSync()
                 loadData()
@@ -413,7 +415,7 @@ struct TrafficStatsView: View {
             page = nil; return
         }
         let startLocal = localCal.startOfDay(for: localDate)
-        guard localCal.date(byAdding: .day, value: 1, to: startLocal) != nil else {
+        guard let endLocal = localCal.date(byAdding: .day, value: 1, to: startLocal) else {
             page = nil; return
         }
 
@@ -434,7 +436,7 @@ struct TrafficStatsView: View {
             var hasDataArr = [Bool](repeating: false, count: 24)
             for (utcHour, down, upVal) in hourlyData {
                 let localHour = (utcHour + tzOffset + 24) % 24
-                if localHour >= 0 && localHour < 24 && localHour < nowLocal {
+                if localHour >= 0 && localHour < 24 {
                     dn[localHour] = down
                     up[localHour] = upVal
                     hasDataArr[localHour] = down > 0 || upVal > 0
@@ -452,6 +454,49 @@ struct TrafficStatsView: View {
                 hasDataArr[nowLocal] = true
             }
             renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
+
+            // Phase 2: Async minutely refinement — merge on top of Phase 1, fill hours without data
+            if !minutelyLoadedForToday {
+                minutelyLoadedForToday = true
+                let phaseDn = dn
+                let phaseUp = up
+                let phaseHas = hasDataArr
+                db.minutelyTrafficAsync(from: startLocal, to: endLocal) { minutelyData in
+                    var newDn = phaseDn
+                    var newUp = phaseUp
+                    var newHas = phaseHas
+                    var minHas = [Bool](repeating: false, count: 24)
+                    for record in minutelyData {
+                        let h = localCal.component(.hour, from: record.time)
+                        guard h >= 0 && h < 24 else { continue }
+                        if !minHas[h] {
+                            // First record for this hour: replace Phase 1 value
+                            newDn[h] = record.down
+                            newUp[h] = record.up
+                            minHas[h] = true
+                        } else {
+                            // Subsequent records: accumulate
+                            newDn[h] += record.down
+                            newUp[h] += record.up
+                        }
+                        newHas[h] = true
+                    }
+                    // Live delta for current hour
+                    let sDn = newDn.reduce(0, +)
+                    let sUp = newUp.reduce(0, +)
+                    if self.engine.todayDown > sDn {
+                        newDn[nowLocal] += self.engine.todayDown - sDn
+                        newHas[nowLocal] = true
+                    }
+                    if self.engine.todayUp > sUp {
+                        newUp[nowLocal] += self.engine.todayUp - sUp
+                        newHas[nowLocal] = true
+                    }
+                    DispatchQueue.main.async {
+                        self.renderDayPage(dn: newDn, up: newUp, hasData: newHas, isToday: true, nowLocal: nowLocal)
+                    }
+                }
+            }
         } else {
             // Past days: hourly table is complete, instant render
             let hourlyData = db.dailyHourlyTraffic(for: localDate)
