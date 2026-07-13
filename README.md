@@ -48,7 +48,9 @@ macOS 菜单栏网络监控应用，实时显示网速、CPU/GPU/内存使用率
 
 ## 截图
 
-> 运行截图待添加（欢迎贡献！）
+| 菜单栏 | 弹出窗口 | 浮动窗口 | 流量统计 |
+|--------|---------|---------|---------|
+| ![菜单栏](screenshots/menubar.png) | ![弹出窗口](screenshots/popover.png) | ![浮动窗口](screenshots/floating-window.png) | ![流量统计](screenshots/traffic-stats.png) |
 
 ## 系统要求
 
