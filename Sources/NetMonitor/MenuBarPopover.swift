@@ -131,18 +131,18 @@ struct MenuBarPopover: View {
     private var trafficBadgesRow: some View {
         HStack(spacing: Spacing.md) {
             trafficCard(
-                color: .uploadColor,
-                label: L10n.tr("Upload Total"),
-                showSession: $uploadShowSession,
-                sessionValue: engine.totalSessionUp,
-                todayValue: engine.todayUp
-            )
-            trafficCard(
                 color: .downloadColor,
                 label: L10n.tr("Download Total"),
                 showSession: $downloadShowSession,
                 sessionValue: engine.totalSessionDown,
                 todayValue: engine.todayDown
+            )
+            trafficCard(
+                color: .uploadColor,
+                label: L10n.tr("Upload Total"),
+                showSession: $uploadShowSession,
+                sessionValue: engine.totalSessionUp,
+                todayValue: engine.todayUp
             )
         }
         .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.xs)
@@ -213,8 +213,8 @@ struct MenuBarPopover: View {
 
     private var speedsSection: some View {
         HStack(spacing: Spacing.md) {
-            speedItem(icon: "arrow.up.circle.fill", speed: engine.currentUpSpeed, color: .uploadColor)
             speedItem(icon: "arrow.down.circle.fill", speed: engine.currentDownSpeed, color: .downloadColor)
+            speedItem(icon: "arrow.up.circle.fill", speed: engine.currentUpSpeed, color: .uploadColor)
         }
     }
 
@@ -248,8 +248,8 @@ struct MenuBarPopover: View {
             }
 
             VStack(spacing: 16) {
-                speedChartRow(label: L10n.tr("Upload Speed"), data: engine.upHistory, times: engine.upHistoryTimes, color: .uploadColor)
                 speedChartRow(label: L10n.tr("Download Speed"), data: engine.downHistory, times: engine.downHistoryTimes, color: .downloadColor)
+                speedChartRow(label: L10n.tr("Upload Speed"), data: engine.upHistory, times: engine.upHistoryTimes, color: .uploadColor)
             }
             .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.sm)
         }

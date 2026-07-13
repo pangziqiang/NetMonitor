@@ -259,7 +259,7 @@ struct TrafficStatsView: View {
     private func onBarDoubleTapped(index: Int, type: BarType, value: UInt64) {
         guard let db = DatabaseManager.shared else { return }
         guard index >= 0, index < 24 else { return }
-                        var cal = Calendar.current
+        var cal = Calendar.current
         cal.timeZone = TimeZone.current
         var startDate: Date?
         var endDate: Date?
@@ -292,8 +292,7 @@ struct TrafficStatsView: View {
         }
 
         guard let s = startDate, let e = endDate else { return }
-        let typeName = type == .download ? L10n.tr("Download") : L10n.tr("Upload")
-        detailLabel = "\(label) \(typeName) (\(barFormatBytes(value)))"
+        detailLabel = label
         detailType = type
         let processes = db.topProcessesFromMinutely(from: s, to: e, limit: 20)
         // Sort processes by the active type (download or upload)
@@ -327,9 +326,12 @@ struct TrafficStatsView: View {
                     VStack(spacing: 0) {
                         HStack {
                             Text(L10n.tr("Process")).frame(maxWidth: .infinity, alignment: .leading)
-                            Text(L10n.tr("Download")).frame(width: 110, alignment: .trailing)
-                            Text(L10n.tr("Upload")).frame(width: 110, alignment: .trailing)
-                            Text(L10n.tr("Total")).frame(width: 110, alignment: .trailing)
+                            Text("\(L10n.tr("Download"))（\(barFormatBytes(detailProcesses.reduce(0) { $0 + $1.down }))）")
+                                .frame(width: 150, alignment: .trailing)
+                                .foregroundColor(detailType == .download ? .downloadColor : theme.textMuted)
+                            Text("\(L10n.tr("Upload"))（\(barFormatBytes(detailProcesses.reduce(0) { $0 + $1.up }))）")
+                                .frame(width: 150, alignment: .trailing)
+                                .foregroundColor(detailType == .upload ? .uploadColor : theme.textMuted)
                         }
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(theme.textMuted)
@@ -346,12 +348,11 @@ struct TrafficStatsView: View {
                                 Text(barFormatBytes(proc.down))
                                     .foregroundColor(detailType == .download ? .downloadColor : theme.textPrimary)
                                     .fontWeight(detailType == .download ? .bold : .regular)
-                                    .frame(width: 110, alignment: .trailing)
+                                    .frame(width: 150, alignment: .trailing)
                                 Text(barFormatBytes(proc.up))
                                     .foregroundColor(detailType == .upload ? .uploadColor : theme.textPrimary)
                                     .fontWeight(detailType == .upload ? .bold : .regular)
-                                Text(barFormatBytes(proc.down + proc.up))
-                                    .frame(width: 110, alignment: .trailing)
+                                    .frame(width: 150, alignment: .trailing)
                             }
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundColor(theme.textPrimary)
