@@ -15,33 +15,18 @@ private func iso8601Date(from string: String) -> Date? {
     return f.date(from: string)
 }
 
-// MARK: - Process Traffic Item
-
-struct ProcessTrafficItem: Identifiable {
-    let pid: Int32
-    let name: String
-    let startTime: time_t
-    let totalDown: UInt64
-    let totalUp: UInt64
-    let history: [(minute: Date, down: UInt64, up: UInt64)]
-
-    var id: String { "\(pid)_\(startTime)" }
-}
-
 // MARK: - Time Range
 
 enum TrafficTimeRange: String, CaseIterable {
     case today
     case week
     case year
-    case process
 
     var displayName: String {
         switch self {
         case .today: return L10n.tr("Day")
         case .week: return L10n.tr("Week")
         case .year: return L10n.tr("Year")
-        case .process: return L10n.tr("Process")
         }
     }
 }
@@ -64,20 +49,7 @@ struct TrafficStatsView: View {
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
     private let cfg = BarChartConfig.shared
 
-    enum ViewMode: String, CaseIterable {
-        case overall = "Overall"
-        case process = "Process"
 
-        var displayName: String {
-            switch self {
-            case .overall: return L10n.tr("Overall")
-            case .process: return L10n.tr("By Process")
-            }
-        }
-    }
-
-    @State private var viewMode: ViewMode = .overall
-    @State private var selectedProcess: ProcessTrafficItem?
     @State private var selectedBarIndex: Int? = nil
     @State private var selectedBarType: BarType? = nil
 
@@ -197,9 +169,7 @@ struct TrafficStatsView: View {
 
     private var scrollContent: some View {
         ScrollView(.vertical, showsIndicators: true) {
-            if timeRange == .process {
-                processTabContent
-            } else if let page {
+            if let page {
                 VStack(alignment: .leading, spacing: 16) {
                     statsBar(page)
                     chartSection(data: page.dn, color: .downloadColor, page: page, type: .download)
@@ -221,51 +191,7 @@ struct TrafficStatsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Process Tab Content
 
-    private var processTabContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if let processPage = processPage {
-                processStatsBar(processPage)
-                processTable(processPage)
-                // Per-process charts (top 5)
-                ForEach(processPage.topProcesses.prefix(5), id: \.pid) { proc in
-                    processChartSection(proc)
-                }
-            } else {
-                VStack {
-                    Spacer()
-                    Text(L10n.tr("No Data"))
-                        .font(.system(size: 14))
-                        .foregroundColor(theme.textMuted)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, minHeight: 300)
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 20)
-    }
-
-    private struct ProcessPage {
-        let topProcesses: [ProcessTraffic]
-        let totalDown: UInt64
-        let totalUp: UInt64
-    }
-
-    private struct ProcessTraffic: Identifiable {
-        let pid: Int32
-        let name: String
-        let startTime: time_t
-        let down: UInt64
-        let up: UInt64
-        var history: [(minute: Date, down: UInt64, up: UInt64)]
-
-        var id: String { "\(pid)_\(startTime)" }
-        var total: UInt64 { down + up }
-    }
-
-    @State private var processPage: ProcessPage?
 
     // MARK: - Stats Bar
 
@@ -294,119 +220,6 @@ struct TrafficStatsView: View {
                 .font(.system(size: small ? 13 : 16, weight: .bold, design: .monospaced))
                 .foregroundColor(color)
         }
-    }
-
-    // MARK: - Process Stats Bar
-
-    private func processStatsBar(_ page: ProcessPage) -> some View {
-        HStack(spacing: 20) {
-            statItem(label: L10n.tr("Total Download"), value: barFormatBytes(page.totalDown), color: .downloadColor)
-            statItem(label: L10n.tr("Total Upload"), value: barFormatBytes(page.totalUp), color: .uploadColor)
-            statItem(label: L10n.tr("Processes"), value: "\(page.topProcesses.count)", color: .accentPurple, small: true)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(theme.textMuted.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    // MARK: - Process Table
-
-    private func processTable(_ page: ProcessPage) -> some View {
-        ScrollView(.horizontal, showsIndicators: true) {
-            VStack(spacing: 0) {
-                HStack {
-                    Text(L10n.tr("Process")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(L10n.tr("Download")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 120, alignment: .trailing)
-                    Text(L10n.tr("Upload")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 120, alignment: .trailing)
-                    Text(L10n.tr("Total")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 120, alignment: .trailing)
-                    Text(L10n.tr("%")).font(.system(size: 11, weight: .medium)).foregroundColor(theme.textMuted).frame(width: 60, alignment: .trailing)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(theme.textMuted.opacity(0.03))
-
-                Divider()
-
-                ForEach(page.topProcesses) { proc in
-                    HStack {
-                        Text(proc.name)
-                            .font(.system(size: 12))
-                            .foregroundColor(theme.textPrimary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(barFormatBytes(proc.down))
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.downloadColor)
-                            .frame(width: 120, alignment: .trailing)
-                        Text(barFormatBytes(proc.up))
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.uploadColor)
-                            .frame(width: 120, alignment: .trailing)
-                        Text(barFormatBytes(proc.down + proc.up))
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(theme.textPrimary)
-                            .frame(width: 120, alignment: .trailing)
-                        Text(String(format: "%.1f%%", Double(proc.down + proc.up) / Double(max(1, page.totalDown + page.totalUp)) * 100))
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(theme.textMuted)
-                            .frame(width: 60, alignment: .trailing)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(theme.appBg)
-                    Divider().opacity(0.1)
-                }
-            }
-            .background(theme.textMuted.opacity(0.03))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-    }
-
-    // MARK: - Process Chart Section
-
-    private func processChartSection(_ proc: ProcessTraffic) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(proc.name)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(theme.textPrimary)
-
-            if !proc.history.isEmpty {
-                let dnData = proc.history.map { $0.down }
-                let upData = proc.history.map { $0.up }
-                let labels1 = proc.history.map { iso8601MinuteString(from: $0.minute) }
-                let labels2 = [String](repeating: "", count: labels1.count)
-                let maxVal = max(dnData.max() ?? 0, upData.max() ?? 0)
-                let niceMax = maxVal > 0 ? barNiceMax([maxVal]) : 1
-
-                VStack(spacing: 16) {
-                    BarChartRenderer(
-                        data: dnData, color: .downloadColor,
-                        labels1: labels1, labels2: labels2,
-                        isFuture: { _ in false },
-                        hasData: { idx in idx < dnData.count && dnData[idx] > 0 },
-                        sharedMax: niceMax, config: cfg,
-                        onBarTap: nil, selectedIndex: nil
-                    )
-                    .frame(height: 120)
-
-                    BarChartRenderer(
-                        data: upData, color: .uploadColor,
-                        labels1: labels1, labels2: labels2,
-                        isFuture: { _ in false },
-                        hasData: { idx in idx < upData.count && upData[idx] > 0 },
-                        sharedMax: niceMax, config: cfg,
-                        onBarTap: nil, selectedIndex: nil
-                    )
-                    .frame(height: 120)
-                }
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(theme.textMuted.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func iso8601MinuteString(from date: Date) -> String {
@@ -468,7 +281,7 @@ struct TrafficStatsView: View {
 
     private func loadData() {
         let db = DatabaseManager.shared
-        guard let db else { page = nil; processPage = nil; return }
+        guard let db else { page = nil; return }
         switch timeRange {
         case .today:
             loadDay(db)
@@ -476,33 +289,7 @@ struct TrafficStatsView: View {
             loadWeek(db)
         case .year:
             loadYear(db)
-        case .process:
-            loadProcess(db)
-        }
     }
-
-    // MARK: - Process Data Loading
-
-    private func loadProcess(_ db: DatabaseManager) {
-        let cal = Calendar.current
-        let end = Date()
-        let start = cal.date(byAdding: .day, value: -7, to: end) ?? end
-
-        let processes = db.topProcessesTraffic(from: start, to: end, limit: 20)
-        var totalDown: UInt64 = 0
-        var totalUp: UInt64 = 0
-        var topProcs: [ProcessTraffic] = []
-
-        for (pid, name, startTime, down, up) in processes {
-            totalDown += down
-            totalUp += up
-            let history = db.processTrafficHistory(pid: pid, startTime: startTime, from: start, to: end)
-            topProcs.append(ProcessTraffic(pid: pid, name: name, startTime: startTime, down: down, up: up, history: history))
-        }
-
-        DispatchQueue.main.async {
-            self.processPage = ProcessPage(topProcesses: topProcs, totalDown: totalDown, totalUp: totalUp)
-        }
     }
 
     // MARK: - Day (24h)
