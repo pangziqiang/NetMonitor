@@ -44,6 +44,9 @@ struct TrafficStatsView: View {
     @State private var selectedDateStr: String = ""
     @State private var availableDateStrs: [String] = []
     @State private var refreshTimer: Timer?
+    @State private var todayDnBase: [UInt64] = []
+    @State private var todayUpBase: [UInt64] = []
+    @State private var todayBaseLoaded = false
 
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
     private let cfg = BarChartConfig.shared
@@ -77,7 +80,7 @@ struct TrafficStatsView: View {
             refreshTimer?.invalidate()
             refreshTimer = nil
         }
-        .onChange(of: timeRange) { _, _ in loadData() }
+        .onChange(of: timeRange) { _, _ in todayBaseLoaded = false; loadData() }
         .onChange(of: selectedDateStr) { _, _ in if timeRange == .today { loadData() } }
         .sheet(isPresented: $showDetailSheet) {
             processDetailSheet
@@ -413,7 +416,7 @@ struct TrafficStatsView: View {
             page = nil; return
         }
         let startLocal = localCal.startOfDay(for: localDate)
-        guard localCal.date(byAdding: .day, value: 1, to: startLocal) != nil else {
+        guard let endLocal = localCal.date(byAdding: .day, value: 1, to: startLocal) else {
             page = nil; return
         }
 
@@ -427,42 +430,69 @@ struct TrafficStatsView: View {
         let tzOffset = TimeZone.current.secondsFromGMT() / 3600
 
         if isToday {
-            // Hourly table baseline (fast, synchronous) — all 24 hours
-            let hourlyData = db.dailyHourlyTraffic(for: localDate)
-            var dn = [UInt64](repeating: 0, count: 24)
-            var up = [UInt64](repeating: 0, count: 24)
-            var hasDataArr = [Bool](repeating: false, count: 24)
-            for (utcHour, down, upVal) in hourlyData {
-                let localHour = (utcHour + tzOffset + 24) % 24
-                if localHour >= 0 && localHour < 24 {
-                    dn[localHour] = down
-                    up[localHour] = upVal
-                    hasDataArr[localHour] = down > 0 || upVal > 0
+            // First tick: aggregate ALL minutely data for today (sync, ~50ms once)
+            if !todayBaseLoaded {
+                let records = db.minutelyTraffic(from: startLocal, to: endLocal)
+                var dn = [UInt64](repeating: 0, count: 24)
+                var up = [UInt64](repeating: 0, count: 24)
+                var hasDataArr = [Bool](repeating: false, count: 24)
+                for record in records {
+                    let h = localCal.component(.hour, from: record.time)
+                    guard h >= 0 && h < 24 else { continue }
+                    dn[h] += record.down
+                    up[h] += record.up
+                    hasDataArr[h] = true
                 }
+                // Engine delta for current hour
+                let sumDn = dn.reduce(0, +)
+                if engine.todayDown > sumDn {
+                    dn[nowLocal] += engine.todayDown - sumDn
+                    hasDataArr[nowLocal] = true
+                }
+                let sumUp = up.reduce(0, +)
+                if engine.todayUp > sumUp {
+                    up[nowLocal] += engine.todayUp - sumUp
+                    hasDataArr[nowLocal] = true
+                }
+                todayDnBase = dn
+                todayUpBase = up
+                todayBaseLoaded = true
+                renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
+            } else {
+                // Subsequent ticks: baseline + fresh minutely for touched hours + engine delta
+                var dn = todayDnBase
+                var up = todayUpBase
+                var hasDataArr = [Bool](repeating: false, count: 24)
+                for h in 0..<24 where dn[h] > 0 || up[h] > 0 { hasDataArr[h] = true }
+                // Reset hours touched by fresh minutely, then re-aggregate from current data
+                let recent = db.minutelyTraffic(minutes: 180)
+                var touchedHours = Set<Int>()
+                for record in recent {
+                    let h = localCal.component(.hour, from: record.time)
+                    guard h >= 0 && h < 24 else { continue }
+                    touchedHours.insert(h)
+                }
+                for h in touchedHours where h < 24 { dn[h] = 0; up[h] = 0 }
+                for record in recent {
+                    let h = localCal.component(.hour, from: record.time)
+                    guard h >= 0 && h < 24 else { continue }
+                    dn[h] += record.down
+                    up[h] += record.up
+                    hasDataArr[h] = true
+                }
+                // Engine delta on top of refreshed data
+                let sumAfterRefresh = dn.reduce(0, +)
+                if engine.todayDown > sumAfterRefresh {
+                    dn[nowLocal] += engine.todayDown - sumAfterRefresh
+                    hasDataArr[nowLocal] = true
+                }
+                let upSumAfterRefresh = up.reduce(0, +)
+                if engine.todayUp > upSumAfterRefresh {
+                    up[nowLocal] += engine.todayUp - upSumAfterRefresh
+                    hasDataArr[nowLocal] = true
+                }
+                renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
             }
-
-            // Overwrite recent hours with minutely data (fast sync, last 3h only)
-            let recent = db.minutelyTraffic(minutes: 180)
-            for record in recent {
-                let h = localCal.component(.hour, from: record.time)
-                guard h >= 0 && h < 24 else { continue }
-                dn[h] += record.down
-                up[h] += record.up
-                hasDataArr[h] = true
-            }
-
-            // Engine live delta for current hour
-            let sumDn = dn.reduce(0, +)
-            if engine.todayDown > sumDn {
-                dn[nowLocal] += engine.todayDown - sumDn
-                hasDataArr[nowLocal] = true
-            }
-            let sumUp = up.reduce(0, +)
-            if engine.todayUp > sumUp {
-                up[nowLocal] += engine.todayUp - sumUp
-                hasDataArr[nowLocal] = true
-            }
-            renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
         } else {
             // Past days: hourly table is complete, instant render
             let hourlyData = db.dailyHourlyTraffic(for: localDate)
