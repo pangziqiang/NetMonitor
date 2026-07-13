@@ -49,3 +49,6 @@ COMPARISON_REPORT.md
 # Benchmark data
 benchmark-report/
 .github/performance_baseline.txt*
+
+# Temp directories
+软件相关截图/
