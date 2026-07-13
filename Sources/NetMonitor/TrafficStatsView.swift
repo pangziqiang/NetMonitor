@@ -44,9 +44,6 @@ struct TrafficStatsView: View {
     @State private var selectedDateStr: String = ""
     @State private var availableDateStrs: [String] = []
     @State private var refreshTimer: Timer?
-    @State private var cachedDn: [UInt64]?
-    @State private var cachedUp: [UInt64]?
-    @State private var minutelyTaskRunning = false
 
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
     private let cfg = BarChartConfig.shared
@@ -80,8 +77,8 @@ struct TrafficStatsView: View {
             refreshTimer?.invalidate()
             refreshTimer = nil
         }
-        .onChange(of: timeRange) { _, _ in cachedDn = nil; cachedUp = nil; loadData() }
-        .onChange(of: selectedDateStr) { _, _ in if timeRange == .today { cachedDn = nil; cachedUp = nil; loadData() } }
+        .onChange(of: timeRange) { _, _ in loadData() }
+        .onChange(of: selectedDateStr) { _, _ in if timeRange == .today { loadData() } }
         .sheet(isPresented: $showDetailSheet) {
             processDetailSheet
         }
@@ -416,7 +413,7 @@ struct TrafficStatsView: View {
             page = nil; return
         }
         let startLocal = localCal.startOfDay(for: localDate)
-        guard let endLocal = localCal.date(byAdding: .day, value: 1, to: startLocal) else {
+        guard localCal.date(byAdding: .day, value: 1, to: startLocal) != nil else {
             page = nil; return
         }
 
@@ -430,7 +427,7 @@ struct TrafficStatsView: View {
         let tzOffset = TimeZone.current.secondsFromGMT() / 3600
 
         if isToday {
-            // Always start from hourly table as baseline (catch hours without minutely data)
+            // Hourly table baseline (fast, synchronous) — all 24 hours
             let hourlyData = db.dailyHourlyTraffic(for: localDate)
             var dn = [UInt64](repeating: 0, count: 24)
             var up = [UInt64](repeating: 0, count: 24)
@@ -444,13 +441,14 @@ struct TrafficStatsView: View {
                 }
             }
 
-            // Merge cached minutely data: replace only hours that have minutely records
-            if let minDn = cachedDn, let minUp = cachedUp {
-                for h in 0..<24 where minDn[h] > 0 || minUp[h] > 0 {
-                    dn[h] = minDn[h]
-                    up[h] = minUp[h]
-                    hasDataArr[h] = true
-                }
+            // Overwrite recent hours with minutely data (fast sync, last 3h only)
+            let recent = db.minutelyTraffic(minutes: 180)
+            for record in recent {
+                let h = localCal.component(.hour, from: record.time)
+                guard h >= 0 && h < 24 else { continue }
+                dn[h] += record.down
+                up[h] += record.up
+                hasDataArr[h] = true
             }
 
             // Engine live delta for current hour
@@ -465,32 +463,6 @@ struct TrafficStatsView: View {
                 hasDataArr[nowLocal] = true
             }
             renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
-
-            // Phase 2: Background minutely load — runs once, then cache serves all subsequent ticks
-            if !minutelyTaskRunning {
-                minutelyTaskRunning = true
-                let capDb = db
-                let capCal = localCal
-                let capFrom = startLocal
-                let capTo = endLocal
-                DispatchQueue.global().async {
-                    let records = capDb.minutelyTraffic(from: capFrom, to: capTo)
-                    var aggDn = [UInt64](repeating: 0, count: 24)
-                    var aggUp = [UInt64](repeating: 0, count: 24)
-                    for record in records {
-                        let h = capCal.component(.hour, from: record.time)
-                        guard h >= 0 && h < 24 else { continue }
-                        aggDn[h] += record.down
-                        aggUp[h] += record.up
-                    }
-                    DispatchQueue.main.async {
-                        cachedDn = aggDn
-                        cachedUp = aggUp
-                        minutelyTaskRunning = false
-                        loadData()
-                    }
-                }
-            }
         } else {
             // Past days: hourly table is complete, instant render
             let hourlyData = db.dailyHourlyTraffic(for: localDate)
