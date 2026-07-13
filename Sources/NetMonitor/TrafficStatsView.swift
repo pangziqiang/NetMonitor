@@ -455,21 +455,32 @@ struct TrafficStatsView: View {
             }
             renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
 
-            // Phase 2: Background minutely refinement (only once per session)
+            // Phase 2: Background minutely refinement — preserve Phase 1 for hours without minutely data
             if !minutelyLoadedForToday {
                 minutelyLoadedForToday = true
+                let phaseDn = dn
+                let phaseUp = up
+                let phaseHas = hasDataArr
                 db.minutelyTrafficAsync(from: startLocal, to: endLocal) { minutelyData in
-                    var newDn = [UInt64](repeating: 0, count: 24)
-                    var newUp = [UInt64](repeating: 0, count: 24)
-                    var newHas = [Bool](repeating: false, count: 24)
+                    var newDn = phaseDn
+                    var newUp = phaseUp
+                    var newHas = phaseHas
+                    var minHas = [Bool](repeating: false, count: 24)
+
                     for record in minutelyData {
                         let h = localCal.component(.hour, from: record.time)
-                        if h >= 0 && h < 24 {
+                        guard h >= 0 && h < 24 else { continue }
+                        if !minHas[h] {
+                            newDn[h] = record.down
+                            newUp[h] = record.up
+                            minHas[h] = true
+                        } else {
                             newDn[h] += record.down
                             newUp[h] += record.up
-                            newHas[h] = true
                         }
+                        newHas[h] = true
                     }
+
                     // Live delta for current hour
                     let sDn = newDn.reduce(0, +)
                     let sUp = newUp.reduce(0, +)
