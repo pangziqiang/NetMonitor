@@ -10,7 +10,7 @@
 
 ### 报告问题
 
-1. 在 [GitHub Issues](https://github.com/anomalyco/NetMonitor/issues) 中搜索是否已有相同问题
+1. 在 [GitHub Issues](https://github.com/pangziqiang/NetMonitor/issues) 中搜索是否已有相同问题
 2. 如果没有，创建新的 Issue，包含：
    - 问题描述
    - 复现步骤
@@ -62,7 +62,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/anomalyco/NetMonitor.git
+git clone https://github.com/pangziqiang/NetMonitor.git
 cd NetMonitor
 
 # 安装依赖
@@ -83,7 +83,7 @@ bash build-app.sh --release
 - 所有测试必须通过：`swift test`
 - 新功能应包含单元测试
 - 测试使用 Swift Testing 框架（`@Test`, `@Suite`）
-- 当前测试：3 个 Suite，91 个测试用例
+- 当前测试：3 个 Suite，92 个测试用例
 
 ## 行为准则
 
