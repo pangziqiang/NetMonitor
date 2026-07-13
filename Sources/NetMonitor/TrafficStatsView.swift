@@ -78,6 +78,13 @@ struct TrafficStatsView: View {
 
     @State private var viewMode: ViewMode = .overall
     @State private var selectedProcess: ProcessTrafficItem?
+    @State private var selectedBarIndex: Int? = nil
+    @State private var selectedBarType: BarType? = nil
+
+    enum BarType {
+        case download
+        case upload
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -195,8 +202,8 @@ struct TrafficStatsView: View {
             } else if let page {
                 VStack(alignment: .leading, spacing: 16) {
                     statsBar(page)
-                    chartSection(data: page.dn, color: .downloadColor, page: page)
-                    chartSection(data: page.up, color: .uploadColor, page: page)
+                    chartSection(data: page.dn, color: .downloadColor, page: page, type: .download)
+                    chartSection(data: page.up, color: .uploadColor, page: page, type: .upload)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
@@ -379,7 +386,8 @@ struct TrafficStatsView: View {
                         labels1: labels1, labels2: labels2,
                         isFuture: { _ in false },
                         hasData: { idx in idx < dnData.count && dnData[idx] > 0 },
-                        sharedMax: niceMax, config: cfg
+                        sharedMax: niceMax, config: cfg,
+                        onBarTap: nil
                     )
                     .frame(height: 120)
 
@@ -388,7 +396,8 @@ struct TrafficStatsView: View {
                         labels1: labels1, labels2: labels2,
                         isFuture: { _ in false },
                         hasData: { idx in idx < upData.count && upData[idx] > 0 },
-                        sharedMax: niceMax, config: cfg
+                        sharedMax: niceMax, config: cfg,
+                        onBarTap: nil
                     )
                     .frame(height: 120)
                 }
@@ -407,9 +416,9 @@ struct TrafficStatsView: View {
         return String(str.prefix(16)) + ":00.000Z"
     }
 
-    // MARK: - Chart Section
+// MARK: - Chart Section
 
-    private func chartSection(data: [UInt64], color: Color, page: BarChartPage) -> some View {
+    private func chartSection(data: [UInt64], color: Color, page: BarChartPage, type: BarType) -> some View {
         BarChartRenderer(
             data: data,
             color: color,
@@ -418,7 +427,11 @@ struct TrafficStatsView: View {
             isFuture: page.fut,
             hasData: page.hasData,
             sharedMax: barNiceMax([page.dn, page.up].flatMap { $0 }),
-            config: cfg
+            config: cfg,
+            onBarTap: { index in
+                selectedBarIndex = index
+                selectedBarType = type
+            }
         )
             .background(theme.textMuted.opacity(0.03))
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -521,65 +534,67 @@ struct TrafficStatsView: View {
         let tzOffset = TimeZone.current.secondsFromGMT() / 3600
 
         if isToday {
-            // 1) Instant render: hourly table (completed hours) + live delta for current hour
-            let hourlyData = db.dailyHourlyTraffic(for: localDate)
-            var dn = [UInt64](repeating: 0, count: 24)
-            var up = [UInt64](repeating: 0, count: 24)
-            var hasDataArr = [Bool](repeating: false, count: 24)
-
-            // Convert hourly table UTC hours to local hours
-            for (utcHour, down, upVal) in hourlyData {
-                let localHour = (utcHour + tzOffset + 24) % 24
-                if localHour >= 0 && localHour < 24 && localHour < nowLocal {
-                    dn[localHour] = down
-                    up[localHour] = upVal
-                    hasDataArr[localHour] = down > 0 || upVal > 0
+            // Single render: try minutely first, fallback to hourly
+            db.minutelyTrafficAsync(from: startLocal, to: endLocal) { minutelyData in
+                var dn = [UInt64](repeating: 0, count: 24)
+                var up = [UInt64](repeating: 0, count: 24)
+                var hasDataArr = [Bool](repeating: false, count: 24)
+                var hasMinutelyData = false
+                
+                for record in minutelyData {
+                    let h = localCal.component(.hour, from: record.time)
+                    if h >= 0 && h < 24 {
+                        dn[h] += record.down
+                        up[h] += record.up
+                        hasDataArr[h] = true
+                        hasMinutelyData = true
+                    }
                 }
-            }
-            // Live delta for current hour
-            let barSumDn = dn.reduce(0, +)
-            let barSumUp = up.reduce(0, +)
-            if engine.todayDown > barSumDn {
-                dn[nowLocal] += engine.todayDown - barSumDn
-                hasDataArr[nowLocal] = true
-            }
-            if engine.todayUp > barSumUp {
-                up[nowLocal] += engine.todayUp - barSumUp
-                hasDataArr[nowLocal] = true
-            }
-
-            // First paint
-            renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
-
-            // 2) Background minutely aggregation (only once per session)
-            if !minutelyLoadedForToday {
-                minutelyLoadedForToday = true
-                db.minutelyTrafficAsync(from: startLocal, to: endLocal) { minutelyData in
-                    var newDn = [UInt64](repeating: 0, count: 24)
-                    var newUp = [UInt64](repeating: 0, count: 24)
-                    var newHas = [Bool](repeating: false, count: 24)
-                    for record in minutelyData {
-                        let h = localCal.component(.hour, from: record.time)  // LOCAL hour
-                        if h >= 0 && h < 24 {
-                            newDn[h] += record.down
-                            newUp[h] += record.up
-                            newHas[h] = true
+                
+                // Live delta for current hour
+                let barSumDn = dn.reduce(0, +)
+                let barSumUp = up.reduce(0, +)
+                if self.engine.todayDown > dn.reduce(0, +) {
+                    dn[nowLocal] += self.engine.todayDown - barSumDn
+                    hasDataArr[nowLocal] = true
+                }
+                if self.engine.todayUp > up.reduce(0, +) {
+                    up[nowLocal] += self.engine.todayUp - up.reduce(0, +)
+                    hasDataArr[nowLocal] = true
+                }
+                
+                DispatchQueue.main.async {
+                    // If minutely has no data (first run today), fall back to hourly
+                    if hasMinutelyData || dn.reduce(0, +) > 0 || up.reduce(0, +) > 0 {
+                        self.renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
+                    } else {
+                        // Fallback to hourly table
+                        let hourlyData = db.dailyHourlyTraffic(for: localDate)
+                        var dn = [UInt64](repeating: 0, count: 24)
+                        var up = [UInt64](repeating: 0, count: 24)
+                        var hasDataArr = [Bool](repeating: false, count: 24)
+                        for (utcHour, down, upVal) in hourlyData {
+                            let localHour = (utcHour + tzOffset + 24) % 24
+                            if localHour >= 0 && localHour < 24 && localHour < nowLocal {
+                                dn[localHour] = down
+                                up[localHour] = upVal
+                                hasDataArr[localHour] = down > 0 || upVal > 0
+                            }
                         }
+                        // Live delta for current hour
+                        let barSumDn = dn.reduce(0, +)
+                        let barSumUp = up.reduce(0, +)
+                        if self.engine.todayDown > barSumDn {
+                            dn[nowLocal] += self.engine.todayDown - barSumDn
+                            hasDataArr[nowLocal] = true
+                        }
+                        if self.engine.todayUp > barSumUp {
+                            up[nowLocal] += self.engine.todayUp - barSumUp
+                            hasDataArr[nowLocal] = true
+                        }
+                        self.renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
                     }
-                    // Live delta for current hour
-                    let barSumDn = newDn.reduce(0, +)
-                    let barSumUp = newUp.reduce(0, +)
-                    if self.engine.todayDown > barSumDn {
-                        newDn[nowLocal] += self.engine.todayDown - barSumDn
-                        newHas[nowLocal] = true
-                    }
-                    if self.engine.todayUp > barSumUp {
-                        newUp[nowLocal] += self.engine.todayUp - barSumUp
-                        newHas[nowLocal] = true
-                    }
-                    DispatchQueue.main.async {
-                        self.renderDayPage(dn: newDn, up: newUp, hasData: newHas, isToday: true, nowLocal: nowLocal)
-                    }
+                    self.minutelyLoadedForToday = true
                 }
             }
         } else {

@@ -82,6 +82,7 @@ struct BarChartRenderer: View {
     let hasData: (Int) -> Bool
     let sharedMax: Double
     let config: BarChartConfig
+    let onBarTap: ((Int) -> Void)?
 
     @Environment(\.colorScheme) var colorScheme
 
@@ -234,13 +235,34 @@ struct BarChartRenderer: View {
         .frame(width: config.barOff * 2 + config.barW * CGFloat(data.count) + config.barGap * CGFloat(max(data.count - 1, 0)), height: totalH)
         .background(Color(backgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            // Transparent button overlay for reliable click detection on macOS
+            GeometryReader { geo in
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { location in
+                        guard let onBarTap = onBarTap else { return }
+                        let n = data.count
+                        guard n > 0 else { return }
+                        let x = location.x
+                        for i in 0..<n {
+                            let barX = config.barOff + CGFloat(i) * (config.barW + config.barGap)
+                            let barRect = CGRect(x: barX, y: 0, width: config.barW, height: config.cH)
+                            if barRect.contains(CGPoint(x: x, y: location.y)) {
+                                onBarTap(i)
+                                break
+                            }
+                        }
+                    }
+                }
+            )
     }
 
     private func l1Safe(_ i: Int) -> String {
-        i < labels1.count ? labels1[i] : ""
+        i < self.labels1.count ? self.labels1[i] : ""
     }
 
     private func l2Safe(_ i: Int) -> String {
-        i < labels2.count ? labels2[i] : ""
+        i < self.labels2.count ? self.labels2[i] : ""
     }
 }
