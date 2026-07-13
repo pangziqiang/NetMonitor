@@ -724,6 +724,87 @@ public class DatabaseManager {
 
     private static let csvBOM = "\u{FEFF}"
 
+    /// Aggregate today's minutely data by hour directly in SQL — returns 24 rows max, fast.
+    public func minutelyTrafficByHour(for date: Date) -> [(hour: Int, down: UInt64, up: UInt64)] {
+        var cal = Calendar.current
+        cal.timeZone = TimeZone.current
+        let startOfDay = cal.startOfDay(for: date)
+        guard let endOfDay = cal.date(byAdding: .day, value: 1, to: startOfDay) else { return [] }
+        let fromStr = iso8601String(from: startOfDay)
+        let toStr = iso8601String(from: endOfDay)
+        guard let rdb = readDb else { return [] }
+        var stmt: OpaquePointer?
+        let sql = """
+            SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour,
+                   SUM(bytes_down), SUM(bytes_up)
+            FROM traffic_minutely
+            WHERE timestamp >= ? AND timestamp < ?
+            GROUP BY hour
+            ORDER BY hour
+        """
+        guard sqlite3_prepare_v2(rdb, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, fromStr, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, toStr, -1, SQLITE_TRANSIENT)
+        var result: [(Int, UInt64, UInt64)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let hour = Int(sqlite3_column_int(stmt, 0))
+            let down = UInt64(sqlite3_column_int64(stmt, 1))
+            let up = UInt64(sqlite3_column_int64(stmt, 2))
+            result.append((hour, down, up))
+        }
+        return result
+    }
+
+    /// Aggregate top processes from traffic_minutely.top_processes JSON for a given time range.
+    /// Returns data consistent with bar chart totals (same source).
+    public func topProcessesFromMinutely(from: Date, to: Date, limit: Int = 20) -> [(name: String, down: UInt64, up: UInt64)] {
+        let fromStr = iso8601String(from: from)
+        let toStr = iso8601String(from: to)
+        guard let rdb = readDb else { return [] }
+        var stmt: OpaquePointer?
+        let sql = "SELECT top_processes, bytes_down, bytes_up FROM traffic_minutely WHERE timestamp >= ? AND timestamp <= ? AND top_processes IS NOT NULL"
+        guard sqlite3_prepare_v2(rdb, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, fromStr, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, toStr, -1, SQLITE_TRANSIENT)
+        // Aggregate: for each minute, parse top_processes JSON and distribute minute's bytes proportionally
+        var processTotals: [String: (down: UInt64, up: UInt64)] = [:]
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let jsonPtr = sqlite3_column_text(stmt, 0) else { continue }
+            let minuteDown = UInt64(sqlite3_column_int64(stmt, 1))
+            let minuteUp = UInt64(sqlite3_column_int64(stmt, 2))
+            let jsonStr = String(cString: jsonPtr)
+            guard let jsonData = jsonStr.data(using: .utf8),
+                  let arr = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] else { continue }
+            // Sum speeds from top processes for proportional distribution
+            var totalSpeed: Double = 0
+            var procSpeeds: [(name: String, speedDown: Double, speedUp: Double)] = []
+            for dict in arr {
+                guard let name = dict["name"] as? String else { continue }
+                let spdD = dict["down"] as? Double ?? 0
+                let spdU = dict["up"] as? Double ?? 0
+                totalSpeed += spdD + spdU
+                procSpeeds.append((name, spdD, spdU))
+            }
+            guard totalSpeed > 0 else { continue }
+            // Distribute minute's actual bytes proportionally to each process's speed share
+            for (name, spdD, spdU) in procSpeeds {
+                let share = (spdD + spdU) / totalSpeed
+                let pDown = UInt64(Double(minuteDown) * share)
+                let pUp = UInt64(Double(minuteUp) * share)
+                var existing = processTotals[name] ?? (0, 0)
+                existing.down += pDown
+                existing.up += pUp
+                processTotals[name] = existing
+            }
+        }
+        return processTotals
+            .sorted { ($0.value.down + $0.value.up) > ($1.value.down + $1.value.up) }
+            .prefix(limit)
+            .map { (name: $0.key, down: $0.value.down, up: $0.value.up) }
+    }
+
     public func exportDailyCSV(from: Date, to: Date) -> String {
         let data = dailyTraffic(from: from, to: to)
         var csv = Self.csvBOM

@@ -52,7 +52,7 @@ struct TrafficStatsView: View {
     private let cfg = BarChartConfig.shared
 
 
-    @State private var detailProcesses: [(pid: Int32, name: String, startTime: time_t, down: UInt64, up: UInt64)] = []
+    @State private var detailProcesses: [(name: String, down: UInt64, up: UInt64)] = []
     @State private var showDetailSheet = false
     @State private var detailLabel = ""
     @State private var detailBarValue: UInt64 = 0
@@ -295,7 +295,7 @@ struct TrafficStatsView: View {
         detailLabel = "\(label) \(typeName) (\(barFormatBytes(value)))"
         detailBarValue = value
         detailType = type
-        let processes = db.topProcessesTraffic(from: s, to: e, limit: 20)
+        let processes = db.topProcessesFromMinutely(from: s, to: e, limit: 20)
         // Sort processes by the active type (download or upload)
         if type == .download {
             detailProcesses = processes.sorted { $0.down > $1.down }
@@ -427,7 +427,7 @@ struct TrafficStatsView: View {
             page = nil; return
         }
         let startLocal = localCal.startOfDay(for: localDate)
-        guard let endLocal = localCal.date(byAdding: .day, value: 1, to: startLocal) else {
+        guard localCal.date(byAdding: .day, value: 1, to: startLocal) != nil else {
             page = nil; return
         }
 
@@ -443,15 +443,15 @@ struct TrafficStatsView: View {
         if isToday {
             // First tick: aggregate ALL minutely data for today (sync, ~50ms once)
             if !todayBaseLoaded {
-                let records = db.minutelyTraffic(from: startLocal, to: endLocal)
+                let records = db.minutelyTrafficByHour(for: localDate)
                 var dn = [UInt64](repeating: 0, count: 24)
                 var up = [UInt64](repeating: 0, count: 24)
                 var hasDataArr = [Bool](repeating: false, count: 24)
                 for record in records {
-                    let h = localCal.component(.hour, from: record.time)
+                    let h = record.hour
                     guard h >= 0 && h < 24 else { continue }
-                    dn[h] += record.down
-                    up[h] += record.up
+                    dn[h] = record.down
+                    up[h] = record.up
                     hasDataArr[h] = true
                 }
                 // Engine delta for current hour
