@@ -539,6 +539,7 @@ struct MenuBarPopover: View {
 
     private static let iconCache = NSCache<NSNumber, NSImage>()
     private static let nameCacheLimit = 200
+    private static let nameCacheLock = NSLock()
     private static var nameCache: [Int32: String] = [:]
     private static var nameCachePIDs: Set<Int32> = []
 
@@ -551,6 +552,8 @@ struct MenuBarPopover: View {
     }
 
     private func processDisplayName(for snap: ProcessSnapshot) -> String {
+        Self.nameCacheLock.lock()
+        defer { Self.nameCacheLock.unlock() }
         if let cached = Self.nameCache[snap.pid] { return cached }
         if let app = NSRunningApplication(processIdentifier: snap.pid), let name = app.localizedName, !name.isEmpty {
             if Self.nameCache.count >= Self.nameCacheLimit {
@@ -564,7 +567,7 @@ struct MenuBarPopover: View {
 
     private static func invalidateProcessCache() {
         iconCache.removeAllObjects()
-        nameCache.removeAll()
+        nameCacheLock.lock(); nameCache.removeAll(); nameCacheLock.unlock()
     }
 
     // MARK: - Actions

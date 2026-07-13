@@ -89,6 +89,8 @@ public final class IOReportMonitor {
     private var valueCallback: ((String, Int64) -> Void)?
     private let lock = NSLock()
     private var isStopping = false
+    private var contextRetained = false
+    private var _context: UnsafeMutableRawPointer?
     
     public init(group: IOReportGroup) {
         self.group = group
@@ -170,28 +172,34 @@ public final class IOReportMonitor {
             validChannels.append(ch)
         }
 
-        // Release the channel array (only those not already released)
-        for i in 0..<Int(channelCount) {
-            let ch = channels[i]
-            if !releasedChannels.contains(ch) {
-                _ = lib.release(ch)
-            }
-        }
-        free(channels)
-
         guard !validChannels.isEmpty else { return false }
 
-        // Create subscription
+        // Create subscription — the subscription retains channel objects
         subscription = 0
         let krSub = validChannels.withUnsafeBufferPointer { ptr in
             lib.createSubscription(ptr.baseAddress!, UInt32(ptr.count), 0, &subscription)
         }
         guard krSub == 0, subscription != 0 else { return false }
 
+        // Now release the channel array (only those not used in subscription)
+        for i in 0..<Int(channelCount) {
+            let ch = channels[i]
+            if releasedChannels.contains(ch) {
+                // Already released when rejected — no-op
+            } else {
+                // Channel is in validChannels — subscription holds its reference, we can release ours
+                _ = lib.release(ch)
+            }
+        }
+        free(channels)
+        guard krSub == 0, subscription != 0 else { return false }
+
         self.channels = validChannels
 
         // Start iteration - use passRetained to keep monitor alive during callbacks
         let context = UnsafeMutableRawPointer(Unmanaged.passRetained(self).toOpaque())
+        contextRetained = true
+        _context = context
         let krIterate = lib.iterateNewSamples(subscription, { ctx, channel, buffer, count in
             guard let ctx else { return -1 }
             let monitor = Unmanaged<IOReportMonitor>.fromOpaque(ctx).takeUnretainedValue()
@@ -201,6 +209,8 @@ public final class IOReportMonitor {
         // If start failed, release the retained reference
         if krIterate != 0 {
             Unmanaged<IOReportMonitor>.fromOpaque(context).release()
+            contextRetained = false
+            _context = nil
         }
 
         return krIterate == 0
@@ -227,6 +237,13 @@ public final class IOReportMonitor {
         if let lib, subs != 0 {
             _ = lib.release(subs)
         }
+        // Release the retained self reference now that callbacks are stopped
+        let needRelease = contextRetained
+        contextRetained = false
+        if needRelease, let ctx = _context {
+            Unmanaged<IOReportMonitor>.fromOpaque(ctx).release()
+        }
+        _context = nil
         if let lib {
             for ch in chans {
                 _ = lib.release(ch)

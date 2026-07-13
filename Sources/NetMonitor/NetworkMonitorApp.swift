@@ -23,7 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItemManager?.cleanup()
         engine.stop()
         system.stop()
-        DatabaseManager.shared?.flushPendingTrafficSync()
+        DatabaseManager.shared?.flushPendingTrafficSyncIfNeeded()
         if let obs = settingsWindowObserver {
             NotificationCenter.default.removeObserver(obs)
             settingsWindowObserver = nil

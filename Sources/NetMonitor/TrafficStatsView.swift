@@ -34,6 +34,12 @@ enum TrafficTimeRange: String, CaseIterable {
 // MARK: - Traffic Stats View
 
 struct TrafficStatsView: View {
+    private static let cachedDateFormatter: DateFormatter = {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MM/dd (E)"
+        fmt.locale = Locale.current
+        return fmt
+    }()
     @ObservedObject var engine: NetMonitorEngine
     @ObservedObject var settings: AppSettings
     @EnvironmentObject var appState: AppState
@@ -56,6 +62,8 @@ struct TrafficStatsView: View {
     @State private var showDetailSheet = false
     @State private var detailLabel = ""
     @State private var detailType: BarType = .download
+    @State private var detailBarDown: UInt64 = 0
+    @State private var detailBarUp: UInt64 = 0
 
     /// Week-page date stamps (YYYY-MM-DD), index-aligned with bars
     @State private var weekDates: [String] = []
@@ -71,10 +79,10 @@ struct TrafficStatsView: View {
         .onAppear {
             refreshTimer?.invalidate()
             refreshTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
-                DatabaseManager.shared?.flushPendingTrafficSync()
+                DatabaseManager.shared?.flushPendingTrafficSyncIfNeeded()
                 loadData()
             }
-            DatabaseManager.shared?.flushPendingTrafficSync()
+            DatabaseManager.shared?.flushPendingTrafficSyncIfNeeded()
             loadAvailableDates()
             loadData()
         }
@@ -164,10 +172,7 @@ struct TrafficStatsView: View {
         let todayStr = String(format: "%04d-%02d-%02d", ty, tm, td)
         if dateStr == todayStr { return L10n.tr("Today") }
         guard let date = iso8601Date(from: dateStr + "T00:00:00.000Z") else { return dateStr }
-        let fmt = DateFormatter()
-        fmt.dateFormat = "MM/dd (E)"
-        fmt.locale = Locale.current
-        return fmt.string(from: date)
+        return Self.cachedDateFormatter.string(from: date)
     }
 
     // MARK: - Scroll Content
@@ -294,6 +299,11 @@ struct TrafficStatsView: View {
         guard let s = startDate, let e = endDate else { return }
         detailLabel = label
         detailType = type
+        // Use actual bar values for header totals (not process JSON sum)
+        if index >= 0 && index < 24 {
+            detailBarDown = page?.dn[index] ?? 0
+            detailBarUp = page?.up[index] ?? 0
+        }
         let processes = db.topProcessesFromMinutely(from: s, to: e, limit: 20)
         // Sort processes by the active type (download or upload)
         if type == .download {
@@ -326,10 +336,10 @@ struct TrafficStatsView: View {
                     VStack(spacing: 0) {
                         HStack {
                             Text(L10n.tr("Process")).frame(maxWidth: .infinity, alignment: .leading)
-                            Text("\(L10n.tr("Download"))（\(barFormatBytes(detailProcesses.reduce(0) { $0 + $1.down }))）")
+                            Text("\(L10n.tr("Download"))（\(barFormatBytes(detailBarDown))）")
                                 .frame(width: 150, alignment: .trailing)
                                 .foregroundColor(detailType == .download ? .downloadColor : theme.textMuted)
-                            Text("\(L10n.tr("Upload"))（\(barFormatBytes(detailProcesses.reduce(0) { $0 + $1.up }))）")
+                            Text("\(L10n.tr("Upload"))（\(barFormatBytes(detailBarUp))）")
                                 .frame(width: 150, alignment: .trailing)
                                 .foregroundColor(detailType == .upload ? .uploadColor : theme.textMuted)
                         }
@@ -409,7 +419,7 @@ struct TrafficStatsView: View {
             loadWeek(db)
         case .year:
             loadYear(db)
-    }
+        }
     }
 
     // MARK: - Day (24h)
@@ -471,26 +481,17 @@ struct TrafficStatsView: View {
                 todayBaseLoaded = true
                 renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
             } else {
-                // Subsequent ticks: baseline + fresh minutely for touched hours + engine delta
-                var dn = todayDnBase
-                var up = todayUpBase
+                // Subsequent ticks: re-aggregate from SQL (fast, ~5ms) + engine delta
+                var dn = [UInt64](repeating: 0, count: 24)
+                var up = [UInt64](repeating: 0, count: 24)
                 var hasDataArr = [Bool](repeating: false, count: 24)
-                for h in 0..<24 where dn[h] > 0 || up[h] > 0 { hasDataArr[h] = true }
-                // Reset hours touched by fresh minutely, then re-aggregate from current data
-                let recent = db.minutelyTraffic(minutes: 180)
-                var touchedHours = Set<Int>()
-                for record in recent {
-                    let h = localCal.component(.hour, from: record.time)
-                    guard h >= 0 && h < 24 else { continue }
-                    touchedHours.insert(h)
-                }
-                for h in touchedHours where h < 24 { dn[h] = 0; up[h] = 0 }
-                for record in recent {
-                    let h = localCal.component(.hour, from: record.time)
-                    guard h >= 0 && h < 24 else { continue }
-                    dn[h] += record.down
-                    up[h] += record.up
-                    hasDataArr[h] = true
+                let freshRecords = db.minutelyTrafficByHour(for: localDate)
+                for record in freshRecords {
+                    let localHour = (record.hour + tzOffset + 24) % 24
+                    guard localHour >= 0 && localHour < 24 else { continue }
+                    dn[localHour] = record.down
+                    up[localHour] = record.up
+                    hasDataArr[localHour] = true
                 }
                 // Engine delta on top of refreshed data
                 let sumAfterRefresh = dn.reduce(0, +)

@@ -131,13 +131,13 @@ public class ProcessMonitor: ObservableObject {
                 var uploadSpeed: Double = 0
                 let startTime = getProcessStartTime(pid)
                 let key = "\(pid)_\(startTime)"
-                
+
                 self.networkLock.lock()
                 let hasBaseline = self.networkHasBaseline
                 var interval: TimeInterval = 0
                 var dlDelta: UInt64 = 0
                 var ulDelta: UInt64 = 0
-                
+
                 if hasBaseline, let prev = self.prevNetworkBytes[key] {
                     interval = now.timeIntervalSince(self.lastNetworkTime)
                     if interval > 0 {

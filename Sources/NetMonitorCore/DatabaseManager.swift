@@ -54,6 +54,17 @@ public class DatabaseManager {
     private var pendingProcesses: String? = nil
     private let peakLock = NSLock()
 
+    private var hasPendingFlush = false
+    private let dirtyLock = NSLock()
+
+    // Cached prepared statements for hot INSERT paths
+    private var stmtInsertMinutely: OpaquePointer?
+    private var _stmtCached = false
+
+    // Lazy backfill guard
+    private var _hourlyBackfilled = false
+    private let backfillDoneLock = NSLock()
+
     private init() throws {
         guard let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             throw DatabaseError.cannotOpen
@@ -114,13 +125,20 @@ public class DatabaseManager {
             guard down > 0 || up > 0 else { return }
             
             let ts = iso8601String(from: now)
+            let dateStr = currentDateStamp()
+            do { try self.exec("BEGIN IMMEDIATE") } catch { os_log("BEGIN IMMEDIATE failed: %{public}@", log: log, type: .error, error.localizedDescription as NSString) }
             _insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
+            _updateDaily(date: dateStr, down: down, up: up)
+            try? self.exec("COMMIT")
         }
         
         let dbToClose = db
         db = nil
+        let rdbToClose = readDb
+        readDb = nil
         queue.async {
             if let db = dbToClose { sqlite3_close(db) }
+            if let rdb = rdbToClose { sqlite3_close(rdb) }
         }
     }
 
@@ -195,7 +213,7 @@ public class DatabaseManager {
         }
         try migrateMinutelyColumns()
         try migrateHourlyPeakTimeColumns()
-        try backfillHourlyData()
+        // backfillHourlyData deferred to first query (lazy)
     }
 
     private func migrateHourlyPeakTimeColumns() throws {
@@ -278,30 +296,32 @@ public class DatabaseManager {
         RunLoop.main.add(timer, forMode: .common)
     }
 
-    /// Accumulates traffic bytes for the current session, updating daily and minutely buffers.
     public func accumulateTraffic(down: UInt64, up: UInt64) {
         accumLock.lock()
         minuteAccumDown += down
         minuteAccumUp += up
+        dirtyLock.lock()
+        hasPendingFlush = true
+        dirtyLock.unlock()
         accumLock.unlock()
-
-        let dateStr = currentDateStamp()
-        queue.async { [weak self] in
-            guard let self, !self.closed else { return }
-            self._updateDaily(date: dateStr, down: down, up: up)
-        }
     }
 
     public func updatePeak(down: Double, up: Double) {
         peakLock.lock()
         if down > pendingPeakDown { pendingPeakDown = down }
         if up > pendingPeakUp { pendingPeakUp = up }
+        dirtyLock.lock()
+        hasPendingFlush = true
+        dirtyLock.unlock()
         peakLock.unlock()
     }
 
     public func updateProcesses(_ json: String?) {
         peakLock.lock()
         pendingProcesses = json
+        dirtyLock.lock()
+        hasPendingFlush = true
+        dirtyLock.unlock()
         peakLock.unlock()
     }
 
@@ -363,10 +383,19 @@ public class DatabaseManager {
         guard down > 0 || up > 0 else { return }
 
         let ts = iso8601String(from: now)
+        let dateStr = currentDateStamp()
+
+        dirtyLock.lock()
+        hasPendingFlush = false
+        dirtyLock.unlock()
 
         queue.async { [weak self] in
             guard let self, !self.closed else { return }
+            // Batch minutely + daily into a single transaction
+            do { try self.exec("BEGIN IMMEDIATE") } catch { os_log("BEGIN IMMEDIATE failed: %{public}@", log: log, type: .error, error.localizedDescription as NSString) }
             self._insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
+            self._updateDaily(date: dateStr, down: down, up: up)
+            try? self.exec("COMMIT")
             
             // Run retention once per hour (not every 15 min)
             let hour = Calendar.current.component(.hour, from: now)
@@ -378,6 +407,15 @@ public class DatabaseManager {
                 self._aggregateHourly(endingAt: now)
             }
         }
+    }
+
+    /// Flushes pending minutely traffic data synchronously only if dirty — called from UI timers.
+    public func flushPendingTrafficSyncIfNeeded() {
+        dirtyLock.lock()
+        let dirty = hasPendingFlush
+        dirtyLock.unlock()
+        guard dirty else { return }
+        flushPendingTrafficSync()
     }
 
     /// Flushes pending minutely traffic data synchronously. Called on deinit to avoid data loss.
@@ -399,25 +437,43 @@ public class DatabaseManager {
         pendingProcesses = nil
         peakLock.unlock()
 
-        guard down > 0 || up > 0 else { return }
+        guard down > 0 || up > 0 else {
+            dirtyLock.lock()
+            hasPendingFlush = false
+            dirtyLock.unlock()
+            return
+        }
 
         let ts = iso8601String(from: now)
+        let dateStr = currentDateStamp()
+
+        dirtyLock.lock()
+        hasPendingFlush = false
+        dirtyLock.unlock()
 
         queue.sync {
             if closed { return }
+            do { try self.exec("BEGIN IMMEDIATE") } catch { os_log("BEGIN IMMEDIATE failed: %{public}@", log: log, type: .error, error.localizedDescription as NSString) }
             self._insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
+            self._updateDaily(date: dateStr, down: down, up: up)
+            try? self.exec("COMMIT")
         }
     }
 
     private func _insertMinutely(ts: String, down: UInt64, up: UInt64, peakDown: Double = 0, peakUp: Double = 0, processes: String? = nil) {
         guard let db else { return }
-        var stmt: OpaquePointer?
-        let sql = "INSERT INTO traffic_minutely (timestamp, bytes_down, bytes_up, peak_down, peak_up, top_processes) VALUES (?, ?, ?, ?, ?, ?)"
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            os_log(.error, log: log, "insertMinutely prepare failed: %{private}@", String(cString: sqlite3_errmsg(db)))
-            return
+        // Cache prepared statement on first use, then reset + rebind
+        if !_stmtCached {
+            let sql = "INSERT INTO traffic_minutely (timestamp, bytes_down, bytes_up, peak_down, peak_up, top_processes) VALUES (?, ?, ?, ?, ?, ?)"
+            if sqlite3_prepare_v2(db, sql, -1, &stmtInsertMinutely, nil) != SQLITE_OK {
+                os_log(.error, log: log, "insertMinutely prepare failed: %{private}@", String(cString: sqlite3_errmsg(db)))
+                return
+            }
+            _stmtCached = true
         }
-        defer { sqlite3_finalize(stmt) }
+        let stmt = stmtInsertMinutely!
+        sqlite3_reset(stmt)
+        sqlite3_clear_bindings(stmt)
         sqlite3_bind_text(stmt, 1, ts, -1, SQLITE_TRANSIENT)
         sqlite3_bind_int64(stmt, 2, Int64(down))
         sqlite3_bind_int64(stmt, 3, Int64(up))
@@ -635,7 +691,7 @@ public class DatabaseManager {
         let fromStr = iso8601String(from: from)
         let toStr = iso8601String(from: to)
         guard let rdb = readDb else { completion([]); return }
-        let formatter = makeISO8601Formatter()
+        let formatter = _cachedISO8601Formatter
         DispatchQueue.global(qos: .userInitiated).async {
             var stmt: OpaquePointer?
             let sql = "SELECT timestamp, bytes_down, bytes_up, peak_down, peak_up, top_processes FROM traffic_minutely WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC"
@@ -781,18 +837,27 @@ public class DatabaseManager {
             var totalSpeed: Double = 0
             var procSpeeds: [(name: String, speedDown: Double, speedUp: Double)] = []
             for dict in arr {
-                guard let name = dict["name"] as? String else { continue }
-                let spdD = dict["down"] as? Double ?? 0
-                let spdU = dict["up"] as? Double ?? 0
+                // Support both old ("name"/"down"/"up") and new ("n"/"d"/"u") JSON keys
+                guard let name = (dict["name"] ?? dict["n"]) as? String else { continue }
+                let spdD = ((dict["down"] ?? dict["d"]) as? Double) ?? ((dict["down"] ?? dict["d"]) as? Int64).map(Double.init) ?? 0
+                let spdU = ((dict["up"] ?? dict["u"]) as? Double) ?? ((dict["up"] ?? dict["u"]) as? Int64).map(Double.init) ?? 0
                 totalSpeed += spdD + spdU
                 procSpeeds.append((name, spdD, spdU))
             }
             guard totalSpeed > 0 else { continue }
+            // Calculate separate download/upload speed totals for proportional distribution
+            var totalSpeedDown: Double = 0
+            var totalSpeedUp: Double = 0
+            for (_, spdD, spdU) in procSpeeds {
+                totalSpeedDown += spdD
+                totalSpeedUp += spdU
+            }
             // Distribute minute's actual bytes proportionally to each process's speed share
             for (name, spdD, spdU) in procSpeeds {
-                let share = (spdD + spdU) / totalSpeed
-                let pDown = UInt64(Double(minuteDown) * share)
-                let pUp = UInt64(Double(minuteUp) * share)
+                let shareDown = totalSpeedDown > 0 ? spdD / totalSpeedDown : 0
+                let shareUp = totalSpeedUp > 0 ? spdU / totalSpeedUp : 0
+                let pDown = UInt64(Double(minuteDown) * shareDown)
+                let pUp = UInt64(Double(minuteUp) * shareUp)
                 var existing = processTotals[name] ?? (0, 0)
                 existing.down += pDown
                 existing.up += pUp
@@ -857,7 +922,16 @@ public class DatabaseManager {
 
     // MARK: - Hourly Aggregation
 
+    private func _ensureHourlyBackfilled() {
+        backfillDoneLock.lock()
+        defer { backfillDoneLock.unlock() }
+        guard !_hourlyBackfilled else { return }
+        _hourlyBackfilled = true
+        try? backfillHourlyData()
+    }
+
     private func _aggregateHourly(endingAt date: Date) {
+        _ensureHourlyBackfilled()
         guard let db else { return }
         let cal = Calendar.current
         guard let hourInterval = cal.dateInterval(of: .hour, for: date) else { return }
@@ -1357,7 +1431,7 @@ public class DatabaseManager {
         let fromStr = iso8601String(from: from)
         let toStr = iso8601String(from: to)
         guard let rdb = readDb else { completion([]); return }
-        let formatter = makeISO8601Formatter()
+        let formatter = _cachedISO8601Formatter
         DispatchQueue.global(qos: .userInitiated).async {
             var stmt: OpaquePointer?
             let sql = "SELECT minute, bytes_down, bytes_up FROM process_traffic WHERE pid = ? AND start_time = ? AND minute >= ? AND minute <= ? ORDER BY minute ASC"
@@ -1380,16 +1454,17 @@ public class DatabaseManager {
     }
 }
 
-private func makeISO8601Formatter() -> ISO8601DateFormatter {
+// MARK: - Cached ISO8601 formatter (thread-safe: all DB access serialized via queue)
+private let _cachedISO8601Formatter: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return f
-}
+}()
 
 private func iso8601String(from date: Date) -> String {
-    return makeISO8601Formatter().string(from: date)
+    return _cachedISO8601Formatter.string(from: date)
 }
 
 internal func iso8601Date(from string: String) -> Date? {
-        return makeISO8601Formatter().date(from: string)
+        return _cachedISO8601Formatter.date(from: string)
     }

@@ -1,72 +1,88 @@
 import Foundation
-import Darwin
 import os.log
 
-public final class ProcessNetworkReader {
-    public static let shared = ProcessNetworkReader()
-
-    private let networkQueue = DispatchQueue(label: "com.opencode.networkmonitor.nettop.reader", qos: .utility)
-    private let parseQueue = DispatchQueue(label: "com.opencode.networkmonitor.nettop.parse", qos: .utility)
-    private let flushQueue = DispatchQueue(label: "com.opencode.networkmonitor.nettop.flush", qos: .utility)
+/// Per-process network traffic reader using continuous nettop (high precision mode).
+/// Runs nettop continuously, parses output, and flushes per-process data every 60 seconds.
+/// CPU cost: ~130% (nettop is a full-speed network sampler).
+final class ProcessNetworkReader {
+    static let shared = ProcessNetworkReader()
 
     private var task: Process?
-    private var pipe: Pipe?
+    private let queue = DispatchQueue(label: "com.opencode.networkmonitor.nettop", qos: .utility)
     private var isRunning = false
     private var isStopping = false
+    private let lock = NSLock()
 
-    private struct ProcessInfo {
-        let startTime: time_t
-        let name: String
-    }
-    private var processCache: [Int32: ProcessInfo] = [:]
-    private let cacheLock = NSLock()
+    private let minuteFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd_HH"
+        f.timeZone = TimeZone.current
+        return f
+    }()
 
     private struct Accumulator {
-        let startTime: time_t
         var totalDown: UInt64 = 0
         var totalUp: UInt64 = 0
-        var lastDown: UInt64 = 0
-        var lastUp: UInt64 = 0
         var lastFlushMinute: String = ""
-
-        init(startTime: time_t) {
-            self.startTime = startTime
-        }
     }
     private var accumulators: [String: Accumulator] = [:]
+    // For ProcessMonitor to consume instead of running its own nettop
+    public func topProcesses() -> [ProcessSnapshot] {
+        accumLock.lock()
+        defer { accumLock.unlock() }
+        var result: [ProcessSnapshot] = []
+        for (key, acc) in accumulators {
+            guard acc.totalDown > 0 || acc.totalUp > 0 else { continue }
+            // Key format: pid|name|startTime
+            let parts = key.split(separator: "|", maxSplits: 2)
+            guard parts.count >= 2, let pid = Int32(parts[0]) else { continue }
+            let name = String(parts[1])
+            let down = Double(acc.totalDown)
+            let up = Double(acc.totalUp)
+            result.append(ProcessSnapshot(pid: pid, name: name, cpuPercent: 0, rssBytes: 0, downloadBytes: down, uploadBytes: up))
+        }
+        return result.sorted { ($0.downloadBytes + $0.uploadBytes) > ($1.downloadBytes + $1.uploadBytes) }
+    }
     private let accumLock = NSLock()
 
     private init() {}
 
-    public func start() {
-        networkQueue.async { [weak self] in
-            self?.runReader()
-        }
+    func start() {
+        lock.lock()
+        guard !isRunning else { lock.unlock(); return }
+        isRunning = true
+        isStopping = false
+        lock.unlock()
+        queue.async { [weak self] in self?.runReader() }
     }
 
-    public func stop() {
-        networkQueue.async { [weak self] in
-            self?.terminateReader()
-        }
+    func stop() {
+        lock.lock()
+        isStopping = true
+        lock.unlock()
+        task?.terminate()
     }
+
+    func tick() {}
+
+    // MARK: - Continuous reader
 
     private func runReader() {
-        guard !isRunning else { return }
-        isRunning = true
-
+        // Clear accumulators from previous burst so each burst starts fresh
+        accumLock.lock()
+        accumulators.removeAll()
+        accumLock.unlock()
         let task = Process()
         task.launchPath = "/usr/bin/nettop"
-        task.arguments = ["-P", "-L", "0", "-n"]
+        // -P: packet/process view, -L 2: 2 samples per burst, -s 1: 1s interval
+        task.arguments = ["-P", "-L", "2", "-n"]
         task.standardError = FileHandle.nullDevice
 
         let pipe = Pipe()
         task.standardOutput = pipe
 
-        self.task = task
-        self.pipe = pipe
-
         task.terminationHandler = { [weak self] _ in
-            self?.networkQueue.async {
+            self?.queue.async {
                 self?.isRunning = false
                 if let self, !self.isStopping {
                     self.scheduleRestart()
@@ -74,165 +90,93 @@ public final class ProcessNetworkReader {
             }
         }
 
-        do {
-            try task.run()
-            os_log("nettop reader started", log: .default, type: .info)
-        } catch {
+        do { try task.run() } catch {
             os_log("nettop launch failed: %{private}@", log: .default, type: .error, error.localizedDescription)
-            isRunning = false
+            lock.lock(); isRunning = false; lock.unlock()
             scheduleRestart()
             return
         }
 
-        readPipe(pipe)
-    }
+        self.task = task
+        os_log("nettop reader started (continuous, high precision)", log: .default, type: .info)
 
-    private func terminateReader() {
-        isStopping = true
-        task?.terminate()
-        pipe?.fileHandleForReading.closeFile()
-        task = nil
-        pipe = nil
-        isRunning = false
-        isStopping = false
-        accumLock.lock()
-        accumulators.removeAll()
-        accumLock.unlock()
-    }
+        let reader = pipe.fileHandleForReading
+        var buffer = Data()
 
-    private func scheduleRestart() {
-        networkQueue.asyncAfter(deadline: .now() + 5) { [weak self] in
-            self?.runReader()
-        }
-    }
+        while !isStopping {
+            let available = reader.availableData
+            if available.isEmpty { break }
+            buffer.append(available)
 
-    private func readPipe(_ pipe: Pipe) {
-        let handle = pipe.fileHandleForReading
-        let bufferSize = 65536
-        var leftover = ""
-
-        while isRunning {
-            let data = handle.readData(ofLength: bufferSize)
-            if data.isEmpty { break }
-            guard let chunk = String(data: data, encoding: .utf8) else { continue }
-
-            let lines = (leftover + chunk).split(separator: "\n", omittingEmptySubsequences: false)
-            leftover = lines.last?.hasSuffix("\n") == false ? String(lines.last!) : ""
-            let completeLines = leftover.isEmpty ? lines : lines.dropLast()
-
-            for line in completeLines {
-                parseQueue.async { [weak self] in
-                    self?.parseLine(String(line))
+            while let newlineRange = buffer.range(of: Data("\n".utf8)) {
+                autoreleasepool {
+                let lineData = buffer.subdata(in: buffer.startIndex..<newlineRange.lowerBound)
+                buffer.removeSubrange(buffer.startIndex...newlineRange.lowerBound)
+                if let line = String(data: lineData, encoding: .utf8) {
+                    parseLine(line)
+                }
                 }
             }
         }
+
+        task.waitUntilExit()
+        lock.lock(); isRunning = false; lock.unlock()
     }
 
+    private func scheduleRestart() {
+        queue.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+            guard let self, !self.isStopping else { return }
+            self.lock.lock()
+            let shouldRestart = !self.isRunning
+            self.lock.unlock()
+            if shouldRestart { self.runReader() }
+        }
+    }
+
+    // MARK: - Parse nettop CSV line
+
     private func parseLine(_ line: String) {
-        guard !line.hasPrefix("#") else { return }
-        let parts = line.split(separator: ",", omittingEmptySubsequences: false)
-        guard parts.count >= 6 else { return }
+        // Skip header line
+        guard !line.hasPrefix("time,") && !line.hasPrefix("seconds,") else { return }
+        let cols = line.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        // nettop -P format: time, name.pid, interface, state, bytes_in, bytes_out, ...
+        guard cols.count >= 6 else { return }
 
-        let pidName = String(parts[1])
-        let pidNameParts = pidName.split(separator: ".")
-        guard let pidStr = pidNameParts.last, let pid = Int32(pidStr) else { return }
+        // Parse "name.pid" from col2
+        let namePid = cols[1].trimmingCharacters(in: .whitespaces)
+        guard let dotIndex = namePid.lastIndex(of: ".") else { return }
+        let name = String(namePid[namePid.startIndex..<dotIndex])
+        guard let pid = Int32(namePid[namePid.index(after: dotIndex)...]) else { return }
 
-        guard let down = UInt64(parts[4]), let up = UInt64(parts[5]) else { return }
+        let downVal = UInt64(cols[4].trimmingCharacters(in: .whitespaces)) ?? 0
+        let upVal = UInt64(cols[5].trimmingCharacters(in: .whitespaces)) ?? 0
 
-        let info = getProcessInfo(pid)
-        let key = "\(pid)_\(info.startTime)"
+        guard downVal > 0 || upVal > 0 else { return }
 
-        let now = Date()
-        let minute = iso8601MinuteString(from: now)
+        let startTime = getProcessStartTime(pid: pid)
+        let key = "\(pid)|\(name)|\(startTime)"
 
         accumLock.lock()
-        var acc = accumulators[key] ?? Accumulator(startTime: info.startTime)
-        let deltaDown = down > acc.lastDown ? down - acc.lastDown : 0
-        let deltaUp = up > acc.lastUp ? up - acc.lastUp : 0
-        acc.totalDown += deltaDown
-        acc.totalUp += deltaUp
-        acc.lastDown = down
-        acc.lastUp = up
-
-        if acc.lastFlushMinute != minute {
-            if !acc.lastFlushMinute.isEmpty {
-                flushAccumulator(key: key, name: info.name, pid: pid, startTime: info.startTime, minute: acc.lastFlushMinute, down: acc.totalDown, up: acc.totalUp)
-            }
-            acc.totalDown = 0
-            acc.totalUp = 0
-            acc.lastFlushMinute = minute
+        if accumulators[key] == nil {
+            accumulators[key] = Accumulator(lastFlushMinute: currentMinuteString())
         }
-        accumulators[key] = acc
+        accumulators[key]!.totalDown += downVal
+        accumulators[key]!.totalUp += upVal
         accumLock.unlock()
     }
 
-    private func flushAccumulator(key: String, name: String, pid: Int32, startTime: time_t, minute: String, down: UInt64, up: UInt64) {
-        guard down > 0 || up > 0 else { return }
-        flushQueue.async {
-            DatabaseManager.shared?.accumulateProcessTraffic(pid: pid, name: name, startTime: startTime, down: down, up: up)
-        }
+    // MARK: - Helpers
+
+    private func currentMinuteString() -> String {
+        minuteFormatter.string(from: Date())
     }
 
-    private func getProcessInfo(_ pid: Int32) -> ProcessInfo {
-        cacheLock.lock()
-        if let cached = processCache[pid] {
-            cacheLock.unlock()
-            return cached
-        }
-        cacheLock.unlock()
-
-        let startTime = getProcessStartTime(pid)
-        let name = getProcessName(pid)
-
-        let info = ProcessInfo(startTime: startTime, name: name)
-
-        cacheLock.lock()
-        processCache[pid] = info
-        cacheLock.unlock()
-
-        return info
-    }
-
-    private func getProcessStartTime(_ pid: Int32) -> time_t {
-        var info = proc_bsdinfo()
-        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-        let ret = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size)
-        return ret == size ? time_t(info.pbi_start_tvsec) : 0
-    }
-
-    private func getProcessName(_ pid: Int32) -> String {
-        var buf = [CChar](repeating: 0, count: 64)
-        let len = proc_name(pid, &buf, UInt32(buf.count))
-        if len > 0 {
-            return String(cString: buf)
-        }
-        return "pid_\(pid)"
-    }
-
-    private func iso8601MinuteString(from date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let str = formatter.string(from: date)
-        return String(str.prefix(16)) + ":00.000Z"
+    private func getProcessStartTime(pid: Int32) -> time_t {
+        var info = kinfo_proc()
+        var mib = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        var size = MemoryLayout<kinfo_proc>.stride
+        let result = sysctl(&mib, 4, &info, &size, nil, 0)
+        guard result == 0 else { return 0 }
+        return time_t(info.kp_proc.p_starttime.tv_sec)
     }
 }
-
-private struct ProcessInfo {
-    let startTime: time_t
-    let name: String
-}
-
-private struct Accumulator {
-    let startTime: time_t
-    var totalDown: UInt64 = 0
-    var totalUp: UInt64 = 0
-    var lastDown: UInt64 = 0
-    var lastUp: UInt64 = 0
-    var lastFlushMinute: String = ""
-
-    init(startTime: time_t) {
-        self.startTime = startTime
-    }
-}
-
-private let PROC_PIDTBSDINFO: Int32 = 6

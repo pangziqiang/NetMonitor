@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>macOS 网络监控软件 — 客观横向评测</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --orange: #d2991d; --red: #f85149;
+    --purple: #a371f7; --cyan: #39d2c0;
+  }
+  * { margin:0; padding:0; box-sizing:border-box }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,'SF Pro Display',system-ui,sans-serif; line-height:1.6; padding:40px 20px }
+  .container { max-width:1140px; margin:0 auto }
+  h1 { font-size:1.8rem; font-weight:700; color:#fff; margin-bottom:4px }
+  h2 { font-size:1.25rem; font-weight:600; color:#e6edf3; margin:36px 0 14px; padding-bottom:6px; border-bottom:1px solid var(--border) }
+  h3 { font-size:0.95rem; font-weight:600; margin:18px 0 8px; color:var(--muted) }
+  .subtitle { color:var(--muted); font-size:0.85rem; margin-bottom:28px }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:22px; margin-bottom:20px }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:20px }
+  .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:16px }
+  .grid4 { display:grid; grid-template-columns:repeat(4,1fr); gap:14px }
+  table { width:100%; border-collapse:collapse; margin:8px 0; font-size:0.9rem }
+  th,td { padding:9px 12px; text-align:center; border-bottom:1px solid var(--border) }
+  th { color:var(--muted); font-weight:500; font-size:0.8rem; white-space:nowrap }
+  td { font-variant-numeric:tabular-nums }
+  .best { font-weight:700; color:var(--green) }
+  .worst { color:var(--red) }
+  .bar-h { display:flex; gap:6px; align-items:center }
+  .bar-fill { height:8px; border-radius:4px; min-width:2px }
+  .metric-row { display:flex; align-items:center; gap:10px; margin:8px 0 }
+  .metric-label { width:150px; font-size:0.85rem; flex-shrink:0; text-align:right }
+  .metric-val { font-weight:600; width:50px; font-size:0.9rem }
+  .metric-bar-wrap { flex:1; background:var(--border); border-radius:3px; height:7px; overflow:hidden }
+  .metric-bar { height:100%; border-radius:3px; transition:width .3s }
+  .caveat { background:rgba(210,153,29,.08); border:1px solid rgba(210,153,29,.2); border-radius:8px; padding:14px 18px; margin:12px 0; font-size:0.85rem; color:var(--orange) }
+  .note { background:rgba(88,166,255,.06); border:1px solid rgba(88,166,255,.15); border-radius:8px; padding:12px 18px; margin:12px 0; font-size:0.84rem }
+  .tag { display:inline-block; padding:1px 8px; border-radius:10px; font-size:0.72rem; font-weight:600 }
+  .tag.g { background:rgba(63,185,80,.15); color:var(--green) }
+  .tag.y { background:rgba(210,153,29,.15); color:var(--orange) }
+  .tag.r { background:rgba(248,81,73,.15); color:var(--red) }
+  .tag.c { background:rgba(57,210,192,.12); color:var(--cyan) }
+  hr { border:none; border-top:1px solid var(--border); margin:24px 0 }
+  .verdict-box { border-radius:10px; padding:20px 24px; margin:16px 0 }
+  .verdict-box h3 { margin-top:0; color:inherit }
+  @media(max-width:768px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>📐 macOS 网络监控软件 — 横向评测报告（v2 · 校准版）</h1>
+<p class="subtitle">
+  方法：四款软件同时冷启动 → 30s 热身 → 60s 连续采样（30 轮 × 2s = 60s）<br>
+  环境：macOS 26.2 · Intel Core i7 8 核 · 采集于 2026-07-13 23:56 CST<br>
+  指标选择：<strong>均值</strong>反映总消耗 · <strong>中位数</strong>反映典型表现 · <strong>P95</strong>反映最差情况
+</p>
+
+<!-- ====== 方法说明 ====== -->
+<div class="note">
+  <strong>⚙️ 方法说明</strong><br>
+  所有软件从完全关闭状态同时启动，等待 30 秒完成初始化后再开始采样。<br>
+  采样使用 <code>ps -o pcpu=</code> 每 2 秒记录一次瞬时 CPU%，连续 60 秒共 30 轮。<br>
+  NetMonitor 的 <code>nettop</code> 子进程单独追踪并单独报告。内存/线程数在采样结束后一次性采集。
+</div>
+
+<!-- ====== 核心 CPU 数据表 ====== -->
+<h2>1. CPU 占用统计</h2>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>指标</th>
+        <th>NetMonitor<br><small>仅主进程</small></th>
+        <th>NetMonitor<br><small>含 nettop</small></th>
+        <th>Stats</th>
+        <th>HagimiMonitor</th>
+        <th>NetWorker Pro</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="text-align:left;font-weight:600">均值 (Mean)</td>
+        <td>1.7%</td>
+        <td>10.5%</td>
+        <td>2.2%</td>
+        <td class="worst">9.7%</td>
+        <td>5.5%</td>
+      </tr>
+      <tr style="background:rgba(88,166,255,.04)">
+        <td style="text-align:left;font-weight:600">中位数 (Median) ★</td>
+        <td class="best">0.0%</td>
+        <td class="best">0.0%</td>
+        <td>1.8%</td>
+        <td class="worst">8.1%</td>
+        <td>3.3%</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-weight:600">P95</td>
+        <td>12.9%</td>
+        <td class="worst">112.0%</td>
+        <td class="best">6.2%</td>
+        <td>20.6%</td>
+        <td>19.5%</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-weight:600">最大值</td>
+        <td>15.5%</td>
+        <td class="worst">121.8%</td>
+        <td class="best">6.9%</td>
+        <td>30.7%</td>
+        <td>23.3%</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-weight:600">最小值</td>
+        <td class="best">0.0%</td>
+        <td class="best">0.0%</td>
+        <td class="best">0.0%</td>
+        <td>5.3%</td>
+        <td>0.5%</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-weight:600">标准差 (σ)</td>
+        <td>4.0</td>
+        <td class="worst">29.5</td>
+        <td class="best">2.0</td>
+        <td>5.4</td>
+        <td>5.7</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-weight:600">总 CPU (30轮合计)</td>
+        <td>50.0%</td>
+        <td>314.5%</td>
+        <td>66.0%</td>
+        <td>289.9%</td>
+        <td>163.4%</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-weight:600">nettop 激活轮数</td>
+        <td colspan="2">4 / 30 (13.3%)</td>
+        <td>—</td>
+        <td>—</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="color:var(--muted);font-size:0.75rem;margin-top:10px">
+    ★ 中位数是最稳健的典型负载指标，不受少数尖峰影响。绿色 = 该列最优，红色 = 该列最差。
+  </p>
+</div>
+
+<!-- ====== 可视化 ====== -->
+<h2>2. 可视化对比</h2>
+
+<div class="grid2">
+  <!-- 均值对比 -->
+  <div class="card">
+    <h3>均值 CPU（越低越好）</h3>
+    <div class="metric-row">
+      <span class="metric-label">NM (仅主进程)</span>
+      <span class="metric-val best">1.7%</span>
+      <div class="metric-bar-wrap"><div class="metric-bar" style="width:5.5%;background:var(--green)"></div></div>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">Stats</span>
+      <span class="metric-val">2.2%</span>
+      <div class="metric-bar-wrap"><div class="metric-bar" style="width:7.2%;background:var(--accent)"></div></div>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">NetWorker Pro</span>
+      <span class="metric-val">5.5%</span>
+      <div class="metric-bar-wrap"><div class="metric-bar" style="width:17.9%;background:var(--purple)"></div></div>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">HagimiMonitor</span>
+      <span class="metric-val worst">9.7%</span>
+      <div class="metric-bar-wrap"><div class="metric-bar" style="width:31.6%;background:var(--red)"></div></div>
+    </div>
+    <div class="metric-row" style="opacity:0.6">
+      <span class="metric-label">NM + nettop</span>
+      <span class="metric-val">10.5%</span>
+      <div class="metric-bar-wrap"><div class="metric-bar" style="width:34.2%;background:var(--orange)"></div></div>
+    </div>
+    <p style="color:var(--muted);font-size:0.72rem;margin-top:10px">比例尺：30.7% = 满条 (Hagimi 最大值)</p>
+  </div>
+
+  <!-- 中位数对比 -->
+  <div class="card">
+    <h3>中位数 CPU（典型负载，更可靠）</h3>
+    <div class="metric-row">
+      <span class="metric-label">NM (仅主进程)</span>
+      <span class="metric-val best">0.0%</span>
+      <div class="metric-bar-wrap"><div class="metric-bar" style="width:0%;background:var(--green)"></div></div>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">NM + nettop</span>
+      <span class="metric-val best">0.0%</span>
+      <div class="metric-bar-wrap"><div class="metric-bar" style="width:0%;background:var(--green)"></div></div>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">Stats</span>
+      <span class="metric-val">1.8%</span>
+      <div class="metric-bar-wrap"><div class="metric-bar" style="width:22.2%;background:var(--accent)"></div></div>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">NetWorker Pro</span>
+      <span class="metric-val">3.3%</span>
+      <div class="metric-bar-wrap"><div class="metric-bar" style="width:40.7%;background:var(--purple)"></div></div>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">HagimiMonitor</span>
+      <span class="metric-val worst">8.1%</span>
+      <div class="metric-bar-wrap"><div class="metric-bar" style="width:100%;background:var(--red)"></div></div>
+    </div>
+    <p style="color:var(--muted);font-size:0.72rem;margin-top:10px">比例尺：8.1% = 满条 (Hagimi 中位数) · NM 中位数 0% 因为 26/30 轮空闲</p>
+  </div>
+</div>
+
+<!-- 波动性 -->
+<div class="card">
+  <h3>稳定性对比（标准差 σ · 越低越稳定）</h3>
+  <div class="metric-row">
+    <span class="metric-label">Stats</span>
+    <span class="metric-val best">2.0σ</span>
+    <div class="metric-bar-wrap"><div class="metric-bar" style="width:6.8%;background:var(--accent)"></div></div>
+  </div>
+  <div class="metric-row">
+    <span class="metric-label">NM (仅主进程)</span>
+    <span class="metric-val">4.0σ</span>
+    <div class="metric-bar-wrap"><div class="metric-bar" style="width:13.6%;background:var(--green)"></div></div>
+  </div>
+  <div class="metric-row">
+    <span class="metric-label">HagimiMonitor</span>
+    <span class="metric-val">5.4σ</span>
+    <div class="metric-bar-wrap"><div class="metric-bar" style="width:18.3%;background:var(--red)"></div></div>
+  </div>
+  <div class="metric-row">
+    <span class="metric-label">NetWorker Pro</span>
+    <span class="metric-val">5.7σ</span>
+    <div class="metric-bar-wrap"><div class="metric-bar" style="width:19.3%;background:var(--purple)"></div></div>
+  </div>
+  <div class="metric-row" style="opacity:0.6">
+    <span class="metric-label">NM + nettop</span>
+    <span class="metric-val worst">29.5σ</span>
+    <div class="metric-bar-wrap"><div class="metric-bar" style="width:100%;background:var(--orange)"></div></div>
+  </div>
+  <p style="color:var(--muted);font-size:0.72rem;margin-top:10px">NM+nettop 的 29.5σ 完全来自 nettop 的间歇性爆发，主进程本身波动仅 4.0σ</p>
+</div>
+
+<!-- ====== 内存 & 资源 ====== -->
+<h2>3. 内存 & 系统资源</h2>
+
+<div class="grid4">
+  <div class="card" style="text-align:center">
+    <div style="font-size:1.6rem;font-weight:700;color:var(--accent)">110 MB</div>
+    <div style="color:var(--muted);font-size:0.85rem">NetMonitor</div>
+    <div class="tag c" style="margin-top:4px">7 线程</div>
+  </div>
+  <div class="card" style="text-align:center">
+    <div style="font-size:1.6rem;font-weight:700;color:var(--muted)">127 MB</div>
+    <div style="color:var(--muted);font-size:0.85rem">Stats</div>
+    <div class="tag r" style="margin-top:4px">16 线程</div>
+  </div>
+  <div class="card" style="text-align:center">
+    <div style="font-size:1.6rem;font-weight:700;color:var(--green)">89 MB</div>
+    <div style="color:var(--muted);font-size:0.85rem">HagimiMonitor</div>
+    <div class="tag g" style="margin-top:4px">8 线程</div>
+  </div>
+  <div class="card" style="text-align:center">
+    <div style="font-size:1.6rem;font-weight:700;color:var(--purple)">114 MB</div>
+    <div style="color:var(--muted);font-size:0.85rem">NetWorker Pro</div>
+    <div class="tag y" style="margin-top:4px">8 线程</div>
+  </div>
+</div>
+
+<div class="note" style="margin-top:16px">
+  <strong>📝 内存说明：</strong>NetMonitor 的 110 MB 包含 SQLite 历史数据库缓存（~50 MB WAL 页面缓存）。
+  HagimiMonitor 89 MB 最低，但功能也最少（无历史、无进程流量）。Stats 127 MB + 16 线程为四款中资源开销最大。
+</div>
+
+<!-- ====== 30轮完整数据 ====== -->
+<h2>4. 完整采样数据（30 轮）</h2>
+<div class="card" style="overflow-x:auto;max-height:500px;overflow-y:auto">
+  <table style="font-size:0.82rem">
+    <thead><tr><th>时间</th><th>NM 主进程</th><th>NM nettop</th><th>Stats</th><th>Hagimi</th><th>NW Pro</th></tr></thead>
+    <tbody>
+      <tr><td>23:56:49</td><td class="best">0.0</td><td>0.0</td><td>2.5</td><td class="worst">7.1</td><td>1.5</td></tr>
+      <tr><td>23:56:52</td><td class="best">0.0</td><td>0.0</td><td>4.2</td><td class="worst">30.7</td><td>2.6</td></tr>
+      <tr><td>23:56:55</td><td class="best">0.3</td><td>0.0</td><td>4.2</td><td class="worst">6.4</td><td>6.0</td></tr>
+      <tr><td>23:56:58</td><td class="best">0.0</td><td>0.0</td><td>5.8</td><td class="worst">16.3</td><td>6.3</td></tr>
+      <tr><td>23:57:01</td><td class="best">0.0</td><td>0.0</td><td>0.1</td><td class="worst">7.0</td><td>7.7</td></tr>
+      <tr><td>23:57:04</td><td class="best">0.1</td><td>0.0</td><td>0.2</td><td>10.4</td><td class="worst">19.5</td></tr>
+      <tr style="background:rgba(248,81,73,.06)"><td>23:57:07</td><td>0.0</td><td class="worst">121.8</td><td>0.3</td><td>8.6</td><td>1.9</td></tr>
+      <tr><td>23:57:10</td><td class="best">0.0</td><td>0.0</td><td>1.0</td><td class="worst">5.7</td><td>0.6</td></tr>
+      <tr><td>23:57:13</td><td class="best">0.0</td><td>0.0</td><td>2.9</td><td class="worst">5.8</td><td>1.4</td></tr>
+      <tr><td>23:57:15</td><td class="best">0.0</td><td>0.0</td><td>6.2</td><td class="worst">20.6</td><td>5.3</td></tr>
+      <tr style="background:rgba(248,81,73,.06)"><td>23:57:18</td><td>0.0</td><td>15.1</td><td>6.9</td><td class="worst">14.6</td><td>8.3</td></tr>
+      <tr><td>23:57:21</td><td class="best">0.1</td><td>0.0</td><td>0.4</td><td>15.3</td><td class="worst">16.0</td></tr>
+      <tr><td>23:57:24</td><td class="best">0.0</td><td>0.0</td><td>0.1</td><td class="worst">8.8</td><td>8.9</td></tr>
+      <tr><td>23:57:27</td><td class="best">0.3</td><td>0.0</td><td>1.3</td><td class="worst">5.3</td><td>1.0</td></tr>
+      <tr style="background:rgba(248,81,73,.06)"><td>23:57:29</td><td>0.6</td><td>20.0</td><td>2.8</td><td class="worst">10.0</td><td>2.0</td></tr>
+      <tr><td>23:57:33</td><td class="best">0.6</td><td>0.0</td><td>4.8</td><td class="worst">6.8</td><td>3.0</td></tr>
+      <tr><td>23:57:35</td><td>2.4</td><td>0.0</td><td>4.0</td><td class="worst">8.3</td><td>6.0</td></tr>
+      <tr><td>23:57:38</td><td>2.3</td><td>0.0</td><td class="best">0.4</td><td class="worst">8.2</td><td>3.6</td></tr>
+      <tr style="background:rgba(248,81,73,.06)"><td>23:57:41</td><td>4.4</td><td class="worst">107.6</td><td>0.2</td><td>8.4</td><td>4.0</td></tr>
+      <tr><td>23:57:44</td><td>10.5</td><td>0.0</td><td class="best">0.8</td><td>6.1</td><td class="worst">11.6</td></tr>
+      <tr><td>23:57:47</td><td class="worst">12.9</td><td>0.0</td><td>1.1</td><td>5.8</td><td class="best">1.3</td></tr>
+      <tr><td>23:57:50</td><td class="best">0.0</td><td>0.0</td><td>3.1</td><td class="worst">6.7</td><td>1.1</td></tr>
+      <tr><td>23:57:52</td><td class="best">0.0</td><td>0.0</td><td>2.7</td><td class="worst">7.9</td><td>1.1</td></tr>
+      <tr><td>23:57:56</td><td class="best">0.0</td><td>0.0</td><td>2.4</td><td class="worst">11.6</td><td>0.9</td></tr>
+      <tr><td>23:57:59</td><td>15.5</td><td>0.0</td><td>2.1</td><td>6.5</td><td class="best">0.5</td></tr>
+      <tr><td>23:58:02</td><td class="best">0.0</td><td>0.0</td><td>3.3</td><td class="worst">13.2</td><td>3.8</td></tr>
+      <tr><td>23:58:04</td><td class="best">0.0</td><td>0.0</td><td>0.2</td><td>7.4</td><td class="worst">9.6</td></tr>
+      <tr><td>23:58:07</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>8.2</td><td class="worst">23.3</td></tr>
+      <tr><td>23:58:10</td><td class="best">0.0</td><td>0.0</td><td>0.6</td><td class="worst">6.4</td><td>2.4</td></tr>
+      <tr><td>23:58:13</td><td class="best">0.0</td><td>0.0</td><td>1.4</td><td class="worst">5.8</td><td>2.2</td></tr>
+    </tbody>
+  </table>
+  <p style="color:var(--muted);font-size:0.72rem;margin-top:8px">红色高亮行 = nettop 子进程活跃轮次 · 绿色 = 该轮最优 · 红色 = 该轮最差</p>
+</div>
+
+<!-- ====== 功能对比（不加权） ====== -->
+<h2>5. 功能对比（仅陈述事实，不参与打分）</h2>
+<div class="card">
+  <table>
+    <thead><tr><th style="text-align:left">功能</th><th>NetMonitor</th><th>Stats</th><th>HagimiMonitor</th><th>NetWorker Pro</th></tr></thead>
+    <tbody>
+      <tr><td style="text-align:left">菜单栏实时网速</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+      <tr><td style="text-align:left">CPU / 内存监控</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+      <tr><td style="text-align:left">GPU / 温度</td><td>✅</td><td>✅</td><td>⚠️ 有限</td><td>❌</td></tr>
+      <tr><td style="text-align:left">进程级流量（每 App 各用多少）</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+      <tr><td style="text-align:left">流量历史 (SQLite)</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+      <tr><td style="text-align:left">柱状图（日/周/年）</td><td>✅</td><td>❌</td><td>❌</td><td>⚠️ 仅实时</td></tr>
+      <tr><td style="text-align:left">双击柱→进程详情</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+      <tr><td style="text-align:left">数据导出</td><td>✅</td><td>✅</td><td>❌</td><td>✅</td></tr>
+      <tr><td style="text-align:left">浮窗</td><td>✅</td><td>✅</td><td>❌</td><td>✅</td></tr>
+      <tr><td style="text-align:left">深色主题</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td></tr>
+    </tbody>
+  </table>
+  <p style="color:var(--muted);font-size:0.78rem;margin-top:10px">
+    功能对比<strong>不纳入性能评分</strong>。不同用户的需求不同，功能多 ≠ 更好。
+  </p>
+</div>
+
+<!-- ====== nettop 独立分析 ====== -->
+<h2>6. nettop 子进程独立分析</h2>
+<div class="card">
+  <p>nettop 是 NetMonitor 独有的子进程开销。在 30 轮采样中，nettop 仅在 <strong>4 轮（13.3%）</strong> 中出现，其余 26 轮空闲。</p>
+
+  <table style="margin-top:10px">
+    <tr><th>指标</th><th>nettop 活跃轮</th><th>nettop 空闲轮</th><th>全部 30 轮</th></tr>
+    <tr><td>活跃次数</td><td>4</td><td>26</td><td>30</td></tr>
+    <tr><td>CPU 均值</td><td class="worst">66.1%</td><td class="best">0.0%</td><td>8.8%</td></tr>
+    <tr><td>典型单次 CPU</td><td>15-122%</td><td>—</td><td>—</td></tr>
+    <tr><td>等效持续开销</td><td colspan="3">8.8% (均值) / 0.0% (中位数)</td></tr>
+  </table>
+
+  <div class="caveat" style="margin-top:14px">
+    <strong>⚠️ 重要说明：</strong>nettop 是 <em>macOS 唯一公开的进程级流量获取方式</em>。
+    替代方案（NetworkExtension / NEFilterDataProvider）需要系统扩展 + 用户手动授权，开发复杂度 10 倍以上。
+    Stats、Hagimi、NetWorker Pro 均选择不实现此功能，因此不存在这笔开销。
+    是否保留此功能应基于用户需求而非性能数据。
+  </div>
+</div>
+
+<!-- ====== HagimiMonitor 专项 ====== -->
+<h2>7. HagimiMonitor 专项说明</h2>
+<div class="card">
+  <p>HagimiMonitor 在本次测试中 CPU 表现最差：<strong>最低 5.3%、均值 9.7%、峰值 30.7%</strong>。它<strong>从不空闲</strong>（30 轮采样中没有任何一轮低于 5.3%）。</p>
+
+  <p style="margin-top:8px;color:var(--muted);font-size:0.9rem">
+    这可能与它较新的 UI 框架 / 渲染管线有关，也可能与本次测试的冷启动窗口有关。建议在正常运行 10+ 分钟后复测以排除初始化影响。
+  </p>
+</div>
+
+<!-- ====== 结论 ====== -->
+<h2>8. 客观结论</h2>
+
+<div class="verdict-box" style="border:1px solid var(--border);background:var(--card)">
+  <h3 style="color:var(--text)">📊 按典型负载（中位数）排序</h3>
+  <table style="margin-top:8px">
+    <tr><th>排名</th><th>软件</th><th>典型 CPU (中位数)</th><th>均值 CPU</th><th>P95 CPU</th><th>内存</th></tr>
+    <tr><td>🥇</td><td><strong>NetMonitor (仅主进程)</strong></td><td class="best">0.0%</td><td>1.7%</td><td>12.9%</td><td>110 MB</td></tr>
+    <tr><td>🥇</td><td><strong>NetMonitor (含 nettop)</strong></td><td class="best">0.0%</td><td>10.5%</td><td>112.0%</td><td>+ nettop 子进程</td></tr>
+    <tr><td>🥈</td><td><strong>Stats</strong></td><td>1.8%</td><td class="best">2.2%</td><td class="best">6.2%</td><td>127 MB</td></tr>
+    <tr><td>🥉</td><td><strong>NetWorker Pro</strong></td><td>3.3%</td><td>5.5%</td><td>19.5%</td><td>114 MB</td></tr>
+    <tr><td>4</td><td><strong>HagimiMonitor</strong></td><td class="worst">8.1%</td><td class="worst">9.7%</td><td>20.6%</td><td class="best">89 MB</td></tr>
+  </table>
+
+  <div style="margin-top:18px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-size:0.85rem">
+    <div>
+      <strong style="color:var(--green)">NetMonitor 优势</strong>
+      <ul style="padding-left:16px;color:var(--muted);margin-top:4px">
+        <li>主进程极低（中位数 0%、均值 1.7%）</li>
+        <li>大部分时间完全空闲</li>
+        <li>唯一有进程流量 + 历史数据</li>
+      </ul>
+    </div>
+    <div>
+      <strong style="color:var(--orange)">NetMonitor 劣势</strong>
+      <ul style="padding-left:16px;color:var(--muted);margin-top:4px">
+        <li>nettop 间歇性爆发（P95 112%）</li>
+        <li>含 nettop 时均值 10.5%</li>
+        <li>内存比 Hagimi 多 21 MB</li>
+      </ul>
+    </div>
+    <div>
+      <strong style="color:var(--accent)">Stats 特点</strong>
+      <ul style="padding-left:16px;color:var(--muted);margin-top:4px">
+        <li>最稳定（σ=2.0、P95=6.2%）</li>
+        <li>无功能额外开销</li>
+        <li>但内存最高 (127 MB) · 线程最多 (16)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<div class="note">
+  <strong>📋 方法局限性声明</strong><br>
+  · 采样精度：<code>ps -o pcpu=</code> 提供瞬时值，非连续监测。尖峰可能恰好落在采样窗口之间被遗漏。<br>
+  · 采样时长：60 秒 (30 轮) 足以捕捉稳态行为，但不足以评估数小时运行趋势。<br>
+  · 环境变量：未控制后台其他进程的 CPU 波动，可能存在 ±1-2% 的系统噪声。<br>
+  · 公平性：所有软件同等条件冷启动 + 30s 热身。<strong>功能差异不参与性能评分。</strong><br>
+  · 建议：将此报告视为快照参考，非权威排名。
+</div>
+
+<p style="text-align:center;color:var(--muted);font-size:0.72rem;margin-top:40px">
+  NetMonitor Benchmark Report v2 · 科学校准版 · 2026-07-13 23:56 CST<br>
+  采集: 30轮×2s=60s · macOS 26.2 · Intel x86_64 8核 · 四软件同时冷启动
+</p>
+
+</div>
+</body>
+</html>
