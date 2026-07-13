@@ -175,6 +175,24 @@ public class DatabaseManager {
             )
         """)
         try exec("CREATE INDEX IF NOT EXISTS idx_hourly_hour ON traffic_hourly(hour)")
+        try exec("""
+            CREATE TABLE IF NOT EXISTS process_traffic (
+                pid INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                start_time INTEGER NOT NULL,
+                minute TEXT NOT NULL,
+                bytes_down INTEGER NOT NULL DEFAULT 0,
+                bytes_up INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(pid, start_time, minute)
+            )
+        """)
+        try exec("CREATE INDEX IF NOT EXISTS idx_proc_minute ON process_traffic(minute)")
+        // One-time cleanup: reset corrupted process_traffic data (accumulation bug fix)
+        let cleanupKey = "process_traffic_cleanup_v2"
+        if !UserDefaults.standard.bool(forKey: cleanupKey) {
+            try exec("DELETE FROM process_traffic")
+            UserDefaults.standard.set(true, forKey: cleanupKey)
+        }
         try migrateMinutelyColumns()
         try migrateHourlyPeakTimeColumns()
         try backfillHourlyData()

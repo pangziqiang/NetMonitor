@@ -158,6 +158,8 @@ public final class ProcessNetworkReader {
             if !acc.lastFlushMinute.isEmpty {
                 flushAccumulator(key: key, name: info.name, pid: pid, startTime: info.startTime, minute: acc.lastFlushMinute, down: acc.totalDown, up: acc.totalUp)
             }
+            acc.totalDown = 0
+            acc.totalUp = 0
             acc.lastFlushMinute = minute
         }
         accumulators[key] = acc
