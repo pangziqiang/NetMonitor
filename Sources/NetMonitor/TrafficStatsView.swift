@@ -507,7 +507,7 @@ struct TrafficStatsView: View {
                 renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
             }
         } else {
-            // Past days: hourly table is complete, instant render
+            // Past days: hourly table as base, fallback to minutely for missing hours
             let hourlyData = db.dailyHourlyTraffic(for: localDate)
             var dn = [UInt64](repeating: 0, count: 24)
             var up = [UInt64](repeating: 0, count: 24)
@@ -518,6 +518,20 @@ struct TrafficStatsView: View {
                     dn[localHour] = down
                     up[localHour] = upVal
                     hasDataArr[localHour] = down > 0 || upVal > 0
+                }
+            }
+            // Fallback: fill missing hours from traffic_minutely
+            
+            if !hasDataArr.allSatisfy({ $0 }) {
+                let minutelyRecords = db.minutelyTrafficByHour(for: localDate)
+                for record in minutelyRecords {
+                    let localHour = (record.hour + tzOffset + 24) % 24
+                    guard localHour >= 0 && localHour < 24 else { continue }
+                    if !hasDataArr[localHour] {
+                        dn[localHour] = record.down
+                        up[localHour] = record.up
+                        hasDataArr[localHour] = record.down > 0 || record.up > 0
+                    }
                 }
             }
             renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: false, nowLocal: 99)
