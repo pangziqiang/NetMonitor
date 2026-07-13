@@ -387,7 +387,7 @@ struct TrafficStatsView: View {
                         isFuture: { _ in false },
                         hasData: { idx in idx < dnData.count && dnData[idx] > 0 },
                         sharedMax: niceMax, config: cfg,
-                        onBarTap: nil
+                        onBarTap: nil, selectedIndex: nil
                     )
                     .frame(height: 120)
 
@@ -397,7 +397,7 @@ struct TrafficStatsView: View {
                         isFuture: { _ in false },
                         hasData: { idx in idx < upData.count && upData[idx] > 0 },
                         sharedMax: niceMax, config: cfg,
-                        onBarTap: nil
+                        onBarTap: nil, selectedIndex: nil
                     )
                     .frame(height: 120)
                 }
@@ -431,7 +431,8 @@ struct TrafficStatsView: View {
             onBarTap: { index in
                 selectedBarIndex = index
                 selectedBarType = type
-            }
+            },
+            selectedIndex: selectedBarType == type ? selectedBarIndex : nil
         )
             .background(theme.textMuted.opacity(0.03))
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -554,12 +555,12 @@ struct TrafficStatsView: View {
                 // Live delta for current hour
                 let barSumDn = dn.reduce(0, +)
                 let barSumUp = up.reduce(0, +)
-                if self.engine.todayDown > dn.reduce(0, +) {
+                if self.engine.todayDown > barSumDn {
                     dn[nowLocal] += self.engine.todayDown - barSumDn
                     hasDataArr[nowLocal] = true
                 }
-                if self.engine.todayUp > up.reduce(0, +) {
-                    up[nowLocal] += self.engine.todayUp - up.reduce(0, +)
+                if self.engine.todayUp > barSumUp {
+                    up[nowLocal] += self.engine.todayUp - barSumUp
                     hasDataArr[nowLocal] = true
                 }
                 

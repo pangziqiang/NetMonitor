@@ -83,6 +83,7 @@ struct BarChartRenderer: View {
     let sharedMax: Double
     let config: BarChartConfig
     let onBarTap: ((Int) -> Void)?
+    let selectedIndex: Int?
 
     @Environment(\.colorScheme) var colorScheme
 
@@ -212,6 +213,12 @@ struct BarChartRenderer: View {
                 let barRect = CGRect(x: x, y: barY, width: config.barW, height: hPx)
                 let barPath = Path(roundedRect: barRect, cornerSize: CGSize(width: config.barR, height: config.barR))
                 ctx.fill(barPath, with: .color(isFut ? Color(futureBarColor) : color))
+
+                // Selection highlight
+                if let selIdx = selectedIndex, selIdx == i {
+                    ctx.fill(barPath, with: .color(Color.white.opacity(0.25)))
+                    ctx.stroke(barPath, with: .color(color.opacity(0.9)), style: StrokeStyle(lineWidth: 2))
+                }
 
                 // X label (primary)
                 let labelY = config.cH + config.xPad + 8
