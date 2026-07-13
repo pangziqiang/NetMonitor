@@ -52,7 +52,10 @@ struct TrafficStatsView: View {
 
     @State private var detailProcesses: [(pid: Int32, name: String, startTime: time_t, down: UInt64, up: UInt64)] = []
     @State private var showDetailSheet = false
-    @State private var detailHourLabel = ""
+    @State private var detailBarLabel = ""
+
+    /// Week-page date stamps (YYYY-MM-DD), index-aligned with bars
+    @State private var weekDates: [String] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -251,26 +254,50 @@ struct TrafficStatsView: View {
     private enum BarType { case download, upload }
 
     private func onBarDoubleTapped(index: Int, type: BarType) {
-        guard let db = DatabaseManager.shared, timeRange == .today else { return }
-        let dateStr = selectedDateStr
-        let dateParts = dateStr.split(separator: "-")
-        guard dateParts.count == 3,
-              let year = Int(dateParts[0]), let month = Int(dateParts[1]), let day = Int(dateParts[2]) else { return }
+        guard let db = DatabaseManager.shared else { return }
         var cal = Calendar.current
         cal.timeZone = TimeZone.current
-        guard let dayStart = cal.date(from: DateComponents(year: year, month: month, day: day)) else { return }
-        let hourStart = cal.date(byAdding: .hour, value: index, to: dayStart) ?? dayStart
-        let hourEnd = cal.date(byAdding: .hour, value: 1, to: hourStart) ?? hourStart
-        let processes = db.topProcessesTraffic(from: hourStart, to: hourEnd, limit: 20)
+        var startDate: Date?
+        var endDate: Date?
+        var label = ""
+
+        switch timeRange {
+        case .today:
+            let dateParts = selectedDateStr.split(separator: "-")
+            guard dateParts.count == 3,
+                  let year = Int(dateParts[0]), let month = Int(dateParts[1]), let day = Int(dateParts[2])
+            else { return }
+            guard let dayStart = cal.date(from: DateComponents(year: year, month: month, day: day))
+            else { return }
+            startDate = cal.date(byAdding: .hour, value: index, to: dayStart)
+            endDate = cal.date(byAdding: .hour, value: 1, to: startDate ?? dayStart)
+            label = String(format: "%02d:00", index)
+
+        case .week:
+            guard index < weekDates.count else { return }
+            let parts = weekDates[index].split(separator: "-")
+            guard parts.count == 3,
+                  let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2])
+            else { return }
+            startDate = cal.date(from: DateComponents(year: year, month: month, day: day))
+            endDate = cal.date(byAdding: .day, value: 1, to: startDate ?? Date())
+            label = weekDates[index]
+
+        case .year:
+            return  // month-level too broad for process detail
+        }
+
+        guard let s = startDate, let e = endDate else { return }
+        let processes = db.topProcessesTraffic(from: s, to: e, limit: 20)
         detailProcesses = processes
-        detailHourLabel = String(format: "%02d:00", index)
+        detailBarLabel = label
         showDetailSheet = true
     }
 
     private var processDetailSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(String(format: L10n.tr("Detail — %@"), detailHourLabel))
+                Text("\(detailBarLabel) " + L10n.tr("Download") + "/" + L10n.tr("Upload"))
                     .font(.system(size: 16, weight: .semibold))
                 Spacer()
                 Button(L10n.tr("Close")) { showDetailSheet = false }
@@ -549,6 +576,8 @@ struct TrafficStatsView: View {
             l2.append(parts.count >= 3 ? "\(parts[1])/\(parts[2])" : "")
             dates.append(dateStr)
         }
+
+        weekDates = dates
 
         let s1 = dn.reduce(0, +), s2 = up.reduce(0, +)
         let totalSec = Double(24 * 86400)
