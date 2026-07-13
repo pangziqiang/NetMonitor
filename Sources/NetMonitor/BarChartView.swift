@@ -82,8 +82,7 @@ struct BarChartRenderer: View {
     let hasData: (Int) -> Bool
     let sharedMax: Double
     let config: BarChartConfig
-    let onBarTap: ((Int) -> Void)?
-    let selectedIndex: Int?
+    let onBarDoubleTap: ((Int) -> Void)?
 
     @Environment(\.colorScheme) var colorScheme
 
@@ -214,12 +213,6 @@ struct BarChartRenderer: View {
                 let barPath = Path(roundedRect: barRect, cornerSize: CGSize(width: config.barR, height: config.barR))
                 ctx.fill(barPath, with: .color(isFut ? Color(futureBarColor) : color))
 
-                // Selection highlight
-                if let selIdx = selectedIndex, selIdx == i {
-                    ctx.fill(barPath, with: .color(Color.white.opacity(0.25)))
-                    ctx.stroke(barPath, with: .color(color.opacity(0.9)), style: StrokeStyle(lineWidth: 2))
-                }
-
                 // X label (primary)
                 let labelY = config.cH + config.xPad + 8
                 let l1Text = Text(l1Safe(i))
@@ -247,8 +240,8 @@ struct BarChartRenderer: View {
             GeometryReader { geo in
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture { location in
-                        guard let onBarTap = onBarTap else { return }
+                    .onTapGesture(count: 2) { location in
+                        guard let onBarDoubleTap = onBarDoubleTap else { return }
                         let n = data.count
                         guard n > 0 else { return }
                         let x = location.x
@@ -256,7 +249,7 @@ struct BarChartRenderer: View {
                             let barX = config.barOff + CGFloat(i) * (config.barW + config.barGap)
                             let barRect = CGRect(x: barX, y: 0, width: config.barW, height: config.cH)
                             if barRect.contains(CGPoint(x: x, y: location.y)) {
-                                onBarTap(i)
+                                onBarDoubleTap(i)
                                 break
                             }
                         }

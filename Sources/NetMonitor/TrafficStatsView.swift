@@ -50,13 +50,9 @@ struct TrafficStatsView: View {
     private let cfg = BarChartConfig.shared
 
 
-    @State private var selectedBarIndex: Int? = nil
-    @State private var selectedBarType: BarType? = nil
-
-    enum BarType {
-        case download
-        case upload
-    }
+    @State private var detailProcesses: [(pid: Int32, name: String, startTime: time_t, down: UInt64, up: UInt64)] = []
+    @State private var showDetailSheet = false
+    @State private var detailHourLabel = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -82,6 +78,9 @@ struct TrafficStatsView: View {
         }
         .onChange(of: timeRange) { _, _ in loadData() }
         .onChange(of: selectedDateStr) { _, _ in if timeRange == .today { loadData() } }
+        .sheet(isPresented: $showDetailSheet) {
+            processDetailSheet
+        }
     }
 
     // MARK: - Title Bar
@@ -172,8 +171,8 @@ struct TrafficStatsView: View {
             if let page {
                 VStack(alignment: .leading, spacing: 16) {
                     statsBar(page)
-                    chartSection(data: page.dn, color: .downloadColor, page: page, type: .download)
-                    chartSection(data: page.up, color: .uploadColor, page: page, type: .upload)
+                    chartSection(data: page.dn, color: .downloadColor, page: page)
+                    chartSection(data: page.up, color: .uploadColor, page: page)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
@@ -231,7 +230,7 @@ struct TrafficStatsView: View {
 
 // MARK: - Chart Section
 
-    private func chartSection(data: [UInt64], color: Color, page: BarChartPage, type: BarType) -> some View {
+    private func chartSection(data: [UInt64], color: Color, page: BarChartPage) -> some View {
         BarChartRenderer(
             data: data,
             color: color,
@@ -241,14 +240,95 @@ struct TrafficStatsView: View {
             hasData: page.hasData,
             sharedMax: barNiceMax([page.dn, page.up].flatMap { $0 }),
             config: cfg,
-            onBarTap: { index in
-                selectedBarIndex = index
-                selectedBarType = type
-            },
-            selectedIndex: selectedBarType == type ? selectedBarIndex : nil
+            onBarDoubleTap: { index in
+                onBarDoubleTapped(index: index, type: color == .downloadColor ? .download : .upload)
+            }
         )
             .background(theme.textMuted.opacity(0.03))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private enum BarType { case download, upload }
+
+    private func onBarDoubleTapped(index: Int, type: BarType) {
+        guard let db = DatabaseManager.shared, timeRange == .today else { return }
+        let dateStr = selectedDateStr
+        let dateParts = dateStr.split(separator: "-")
+        guard dateParts.count == 3,
+              let year = Int(dateParts[0]), let month = Int(dateParts[1]), let day = Int(dateParts[2]) else { return }
+        var cal = Calendar.current
+        cal.timeZone = TimeZone.current
+        guard let dayStart = cal.date(from: DateComponents(year: year, month: month, day: day)) else { return }
+        let hourStart = cal.date(byAdding: .hour, value: index, to: dayStart) ?? dayStart
+        let hourEnd = cal.date(byAdding: .hour, value: 1, to: hourStart) ?? hourStart
+        let processes = db.topProcessesTraffic(from: hourStart, to: hourEnd, limit: 20)
+        detailProcesses = processes
+        detailHourLabel = String(format: "%02d:00", index)
+        showDetailSheet = true
+    }
+
+    private var processDetailSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(String(format: L10n.tr("Detail — %@"), detailHourLabel))
+                    .font(.system(size: 16, weight: .semibold))
+                Spacer()
+                Button(L10n.tr("Close")) { showDetailSheet = false }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundColor(.downloadColor)
+            }
+            .padding(.bottom, 8)
+
+            if detailProcesses.isEmpty {
+                Text(L10n.tr("No Data"))
+                    .foregroundColor(theme.textMuted)
+                    .frame(maxWidth: .infinity, minHeight: 60)
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text(L10n.tr("Process")).frame(maxWidth: .infinity, alignment: .leading)
+                            Text(L10n.tr("Download")).frame(width: 110, alignment: .trailing)
+                            Text(L10n.tr("Upload")).frame(width: 110, alignment: .trailing)
+                            Text(L10n.tr("Total")).frame(width: 110, alignment: .trailing)
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(theme.textMuted)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(theme.textMuted.opacity(0.05))
+
+                        Divider()
+
+                        ForEach(Array(detailProcesses.enumerated()), id: \.offset) { _, proc in
+                            HStack {
+                                Text(proc.name)
+                                    .lineLimit(1).truncationMode(.tail)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Text(barFormatBytes(proc.down))
+                                    .foregroundColor(.downloadColor)
+                                    .frame(width: 110, alignment: .trailing)
+                                Text(barFormatBytes(proc.up))
+                                    .foregroundColor(.uploadColor)
+                                    .frame(width: 110, alignment: .trailing)
+                                Text(barFormatBytes(proc.down + proc.up))
+                                    .frame(width: 110, alignment: .trailing)
+                            }
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(theme.textPrimary)
+                            .padding(.horizontal, 14).padding(.vertical, 6)
+                            Divider().opacity(0.1)
+                        }
+                    }
+                    .background(theme.textMuted.opacity(0.03))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+
+            Spacer()
+        }
+        .padding(20)
+        .frame(width: 520, height: 400)
     }
 
     // MARK: - Load Available Dates
