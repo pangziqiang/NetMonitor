@@ -16,10 +16,10 @@ else
     exit 1
 fi
 
-VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$PROJECT_DIR/Resources/Info.plist")
 DMG_NAME="$APP_NAME-$VERSION.dmg"
 DMG_DIR="$BUILD_DIR/dmg"
-DMG_PATH="$PROJECT_DIR/$APP_NAME.dmg"
+DMG_PATH="$PROJECT_DIR/$DMG_NAME"
 
 echo "📦 Creating DMG: $DMG_PATH"
 echo "   App: $SRC_APP"
