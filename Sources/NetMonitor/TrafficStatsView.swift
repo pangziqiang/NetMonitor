@@ -448,11 +448,11 @@ struct TrafficStatsView: View {
                 var up = [UInt64](repeating: 0, count: 24)
                 var hasDataArr = [Bool](repeating: false, count: 24)
                 for record in records {
-                    let h = record.hour
-                    guard h >= 0 && h < 24 else { continue }
-                    dn[h] = record.down
-                    up[h] = record.up
-                    hasDataArr[h] = true
+                    let localHour = (record.hour + tzOffset + 24) % 24
+                    guard localHour >= 0 && localHour < 24 else { continue }
+                    dn[localHour] = record.down
+                    up[localHour] = record.up
+                    hasDataArr[localHour] = true
                 }
                 // Engine delta for current hour
                 let sumDn = dn.reduce(0, +)
