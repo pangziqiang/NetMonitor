@@ -198,8 +198,7 @@ Package.swift
 
 - 首次启动温度显示需要约 9 秒（SMC 轮询机制）
 - 部分虚拟网络接口（en5-en9）默认排除以避免重复计数，可在设置中自定义前缀
-- 无自动更新检查，需手动下载新版本
-- 权限页目前为占位，TCC 授权检测待实现
+- Sparkle 自动更新尚未集成（指南已准备，见 docs/sparkle-setup.md）
 
 ## Contributing
 
