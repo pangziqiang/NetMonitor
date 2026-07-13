@@ -54,7 +54,9 @@ struct TrafficStatsView: View {
 
     @State private var detailProcesses: [(pid: Int32, name: String, startTime: time_t, down: UInt64, up: UInt64)] = []
     @State private var showDetailSheet = false
-    @State private var detailBarLabel = ""
+    @State private var detailLabel = ""
+    @State private var detailBarValue: UInt64 = 0
+    @State private var detailType: BarType = .download
 
     /// Week-page date stamps (YYYY-MM-DD), index-aligned with bars
     @State private var weekDates: [String] = []
@@ -245,7 +247,7 @@ struct TrafficStatsView: View {
             sharedMax: barNiceMax([page.dn, page.up].flatMap { $0 }),
             config: cfg,
             onBarDoubleTap: { index in
-                onBarDoubleTapped(index: index, type: color == .downloadColor ? .download : .upload)
+                onBarDoubleTapped(index: index, type: color == .downloadColor ? .download : .upload, value: data[index])
             }
         )
             .background(theme.textMuted.opacity(0.03))
@@ -254,7 +256,7 @@ struct TrafficStatsView: View {
 
     private enum BarType { case download, upload }
 
-    private func onBarDoubleTapped(index: Int, type: BarType) {
+    private func onBarDoubleTapped(index: Int, type: BarType, value: UInt64) {
         guard let db = DatabaseManager.shared else { return }
         var cal = Calendar.current
         cal.timeZone = TimeZone.current
@@ -289,16 +291,24 @@ struct TrafficStatsView: View {
         }
 
         guard let s = startDate, let e = endDate else { return }
+        let typeName = type == .download ? L10n.tr("Download") : L10n.tr("Upload")
+        detailLabel = "\(label) \(typeName) (\(barFormatBytes(value)))"
+        detailBarValue = value
+        detailType = type
         let processes = db.topProcessesTraffic(from: s, to: e, limit: 20)
-        detailProcesses = processes
-        detailBarLabel = label
+        // Sort processes by the active type (download or upload)
+        if type == .download {
+            detailProcesses = processes.sorted { $0.down > $1.down }
+        } else {
+            detailProcesses = processes.sorted { $0.up > $1.up }
+        }
         showDetailSheet = true
     }
 
     private var processDetailSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("\(detailBarLabel) " + L10n.tr("Download") + "/" + L10n.tr("Upload"))
+                Text(detailLabel)
                     .font(.system(size: 16, weight: .semibold))
                 Spacer()
                 Button(L10n.tr("Close")) { showDetailSheet = false }
@@ -334,11 +344,12 @@ struct TrafficStatsView: View {
                                     .lineLimit(1).truncationMode(.tail)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 Text(barFormatBytes(proc.down))
-                                    .foregroundColor(.downloadColor)
+                                    .foregroundColor(detailType == .download ? .downloadColor : theme.textPrimary)
+                                    .fontWeight(detailType == .download ? .bold : .regular)
                                     .frame(width: 110, alignment: .trailing)
                                 Text(barFormatBytes(proc.up))
-                                    .foregroundColor(.uploadColor)
-                                    .frame(width: 110, alignment: .trailing)
+                                    .foregroundColor(detailType == .upload ? .uploadColor : theme.textPrimary)
+                                    .fontWeight(detailType == .upload ? .bold : .regular)
                                 Text(barFormatBytes(proc.down + proc.up))
                                     .frame(width: 110, alignment: .trailing)
                             }
