@@ -430,72 +430,64 @@ struct TrafficStatsView: View {
         let tzOffset = TimeZone.current.secondsFromGMT() / 3600
 
         if isToday {
-            if let baseDn = cachedDn, let baseUp = cachedUp {
-                // Cached minutely data + engine delta (no DB query, instant)
-                var dn = baseDn
-                var up = baseUp
-                var hasDataArr = [Bool](repeating: false, count: 24)
-                for h in 0..<24 where dn[h] > 0 || up[h] > 0 { hasDataArr[h] = true }
-                let sumDn = dn.reduce(0, +)
-                if engine.todayDown > sumDn {
-                    dn[nowLocal] += engine.todayDown - sumDn
-                    hasDataArr[nowLocal] = true
+            // Always start from hourly table as baseline (catch hours without minutely data)
+            let hourlyData = db.dailyHourlyTraffic(for: localDate)
+            var dn = [UInt64](repeating: 0, count: 24)
+            var up = [UInt64](repeating: 0, count: 24)
+            var hasDataArr = [Bool](repeating: false, count: 24)
+            for (utcHour, down, upVal) in hourlyData {
+                let localHour = (utcHour + tzOffset + 24) % 24
+                if localHour >= 0 && localHour < 24 {
+                    dn[localHour] = down
+                    up[localHour] = upVal
+                    hasDataArr[localHour] = down > 0 || upVal > 0
                 }
-                let sumUp = up.reduce(0, +)
-                if engine.todayUp > sumUp {
-                    up[nowLocal] += engine.todayUp - sumUp
-                    hasDataArr[nowLocal] = true
-                }
-                renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
-            } else {
-                // Phase 1: Immediate render from hourly table (fast, synchronous)
-                let hourlyData = db.dailyHourlyTraffic(for: localDate)
-                var dn = [UInt64](repeating: 0, count: 24)
-                var up = [UInt64](repeating: 0, count: 24)
-                var hasDataArr = [Bool](repeating: false, count: 24)
-                for (utcHour, down, upVal) in hourlyData {
-                    let localHour = (utcHour + tzOffset + 24) % 24
-                    if localHour >= 0 && localHour < 24 {
-                        dn[localHour] = down
-                        up[localHour] = upVal
-                        hasDataArr[localHour] = down > 0 || upVal > 0
-                    }
-                }
-                let sumDn = dn.reduce(0, +)
-                if engine.todayDown > sumDn {
-                    dn[nowLocal] += engine.todayDown - sumDn
-                    hasDataArr[nowLocal] = true
-                }
-                let sumUp = up.reduce(0, +)
-                if engine.todayUp > sumUp {
-                    up[nowLocal] += engine.todayUp - sumUp
-                    hasDataArr[nowLocal] = true
-                }
-                renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
+            }
 
-                // Phase 2: Background minutely load (off main thread)
-                if !minutelyTaskRunning {
-                    minutelyTaskRunning = true
-                    let capDb = db
-                    let capCal = localCal
-                    let capFrom = startLocal
-                    let capTo = endLocal
-                    DispatchQueue.global().async {
-                        let records = capDb.minutelyTraffic(from: capFrom, to: capTo)
-                        var aggDn = [UInt64](repeating: 0, count: 24)
-                        var aggUp = [UInt64](repeating: 0, count: 24)
-                        for record in records {
-                            let h = capCal.component(.hour, from: record.time)
-                            guard h >= 0 && h < 24 else { continue }
-                            aggDn[h] += record.down
-                            aggUp[h] += record.up
-                        }
-                        DispatchQueue.main.async {
-                            cachedDn = aggDn
-                            cachedUp = aggUp
-                            minutelyTaskRunning = false
-                            loadData()
-                        }
+            // Merge cached minutely data: replace only hours that have minutely records
+            if let minDn = cachedDn, let minUp = cachedUp {
+                for h in 0..<24 where minDn[h] > 0 || minUp[h] > 0 {
+                    dn[h] = minDn[h]
+                    up[h] = minUp[h]
+                    hasDataArr[h] = true
+                }
+            }
+
+            // Engine live delta for current hour
+            let sumDn = dn.reduce(0, +)
+            if engine.todayDown > sumDn {
+                dn[nowLocal] += engine.todayDown - sumDn
+                hasDataArr[nowLocal] = true
+            }
+            let sumUp = up.reduce(0, +)
+            if engine.todayUp > sumUp {
+                up[nowLocal] += engine.todayUp - sumUp
+                hasDataArr[nowLocal] = true
+            }
+            renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
+
+            // Phase 2: Background minutely load — runs once, then cache serves all subsequent ticks
+            if !minutelyTaskRunning {
+                minutelyTaskRunning = true
+                let capDb = db
+                let capCal = localCal
+                let capFrom = startLocal
+                let capTo = endLocal
+                DispatchQueue.global().async {
+                    let records = capDb.minutelyTraffic(from: capFrom, to: capTo)
+                    var aggDn = [UInt64](repeating: 0, count: 24)
+                    var aggUp = [UInt64](repeating: 0, count: 24)
+                    for record in records {
+                        let h = capCal.component(.hour, from: record.time)
+                        guard h >= 0 && h < 24 else { continue }
+                        aggDn[h] += record.down
+                        aggUp[h] += record.up
+                    }
+                    DispatchQueue.main.async {
+                        cachedDn = aggDn
+                        cachedUp = aggUp
+                        minutelyTaskRunning = false
+                        loadData()
                     }
                 }
             }
