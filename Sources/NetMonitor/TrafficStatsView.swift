@@ -436,7 +436,7 @@ struct TrafficStatsView: View {
             var hasDataArr = [Bool](repeating: false, count: 24)
             for (utcHour, down, upVal) in hourlyData {
                 let localHour = (utcHour + tzOffset + 24) % 24
-                if localHour >= 0 && localHour < 24 {
+                if localHour >= 0 && localHour < 24 && localHour < nowLocal {
                     dn[localHour] = down
                     up[localHour] = upVal
                     hasDataArr[localHour] = down > 0 || upVal > 0
@@ -455,42 +455,35 @@ struct TrafficStatsView: View {
             }
             renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
 
-            // Phase 2: Async minutely update (more precise per-hour breakdown)
-            db.minutelyTrafficAsync(from: startLocal, to: endLocal) { minutelyData in
-                var dn2 = [UInt64](repeating: 0, count: 24)
-                var up2 = [UInt64](repeating: 0, count: 24)
-                var hasData2 = [Bool](repeating: false, count: 24)
-                var hasMinutelyData = false
-
-                for record in minutelyData {
-                    let h = localCal.component(.hour, from: record.time)
-                    if h >= 0 && h < 24 {
-                        dn2[h] += record.down
-                        up2[h] += record.up
-                        hasData2[h] = true
-                        hasMinutelyData = true
+            // Phase 2: Background minutely refinement (only once per session)
+            if !minutelyLoadedForToday {
+                minutelyLoadedForToday = true
+                db.minutelyTrafficAsync(from: startLocal, to: endLocal) { minutelyData in
+                    var newDn = [UInt64](repeating: 0, count: 24)
+                    var newUp = [UInt64](repeating: 0, count: 24)
+                    var newHas = [Bool](repeating: false, count: 24)
+                    for record in minutelyData {
+                        let h = localCal.component(.hour, from: record.time)
+                        if h >= 0 && h < 24 {
+                            newDn[h] += record.down
+                            newUp[h] += record.up
+                            newHas[h] = true
+                        }
                     }
-                }
-
-                if hasMinutelyData {
                     // Live delta for current hour
-                    let sDn = dn2.reduce(0, +)
-                    let sUp = up2.reduce(0, +)
+                    let sDn = newDn.reduce(0, +)
+                    let sUp = newUp.reduce(0, +)
                     if self.engine.todayDown > sDn {
-                        dn2[nowLocal] += self.engine.todayDown - sDn
-                        hasData2[nowLocal] = true
+                        newDn[nowLocal] += self.engine.todayDown - sDn
+                        newHas[nowLocal] = true
                     }
                     if self.engine.todayUp > sUp {
-                        up2[nowLocal] += self.engine.todayUp - sUp
-                        hasData2[nowLocal] = true
+                        newUp[nowLocal] += self.engine.todayUp - sUp
+                        newHas[nowLocal] = true
                     }
-                }
-
-                DispatchQueue.main.async {
-                    if hasMinutelyData {
-                        self.renderDayPage(dn: dn2, up: up2, hasData: hasData2, isToday: true, nowLocal: nowLocal)
+                    DispatchQueue.main.async {
+                        self.renderDayPage(dn: newDn, up: newUp, hasData: newHas, isToday: true, nowLocal: nowLocal)
                     }
-                    self.minutelyLoadedForToday = true
                 }
             }
         } else {
