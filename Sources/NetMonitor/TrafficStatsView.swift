@@ -55,7 +55,6 @@ struct TrafficStatsView: View {
     @State private var detailProcesses: [(name: String, down: UInt64, up: UInt64)] = []
     @State private var showDetailSheet = false
     @State private var detailLabel = ""
-    @State private var detailBarValue: UInt64 = 0
     @State private var detailType: BarType = .download
 
     /// Week-page date stamps (YYYY-MM-DD), index-aligned with bars
@@ -70,6 +69,7 @@ struct TrafficStatsView: View {
         .frame(minWidth: cfg.pW, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
         .background(theme.appBg)
         .onAppear {
+            refreshTimer?.invalidate()
             refreshTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
                 DatabaseManager.shared?.flushPendingTrafficSync()
                 loadData()
@@ -83,7 +83,7 @@ struct TrafficStatsView: View {
             refreshTimer = nil
         }
         .onChange(of: timeRange) { _, _ in todayBaseLoaded = false; loadData() }
-        .onChange(of: selectedDateStr) { _, _ in if timeRange == .today { loadData() } }
+        .onChange(of: selectedDateStr) { _, _ in todayBaseLoaded = false; if timeRange == .today { loadData() } }
         .sheet(isPresented: $showDetailSheet) {
             processDetailSheet
         }
@@ -258,7 +258,8 @@ struct TrafficStatsView: View {
 
     private func onBarDoubleTapped(index: Int, type: BarType, value: UInt64) {
         guard let db = DatabaseManager.shared else { return }
-        var cal = Calendar.current
+        guard index >= 0, index < 24 else { return }
+                        var cal = Calendar.current
         cal.timeZone = TimeZone.current
         var startDate: Date?
         var endDate: Date?
@@ -293,7 +294,6 @@ struct TrafficStatsView: View {
         guard let s = startDate, let e = endDate else { return }
         let typeName = type == .download ? L10n.tr("Download") : L10n.tr("Upload")
         detailLabel = "\(label) \(typeName) (\(barFormatBytes(value)))"
-        detailBarValue = value
         detailType = type
         let processes = db.topProcessesFromMinutely(from: s, to: e, limit: 20)
         // Sort processes by the active type (download or upload)

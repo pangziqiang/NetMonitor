@@ -921,6 +921,8 @@ public class DatabaseManager {
 
     private func _findPeakTime(column: String, start: String, end: String) -> String? {
         guard let db else { return nil }
+        let allowed = ["peak_down", "peak_up"]
+        guard allowed.contains(column) else { return nil }
         var stmt: OpaquePointer?
         let sql = "SELECT timestamp FROM traffic_minutely WHERE timestamp >= ? AND timestamp < ? ORDER BY \(column) DESC LIMIT 1"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
