@@ -3,6 +3,8 @@ import SwiftUI
 
 struct PermissionsView: View {
     @State private var isAppleSilicon = false
+    @State private var isMonitoring = true  // engine always active while app runs
+    @EnvironmentObject var settings: AppSettings
     @Environment(\.colorScheme) var colorScheme
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
 
@@ -19,16 +21,16 @@ struct PermissionsView: View {
                 }
             }
 
-            settingsSection(L10n.tr("System Permissions"), textColor: theme.textMuted) {
+            settingsSection(L10n.tr("System Status"), textColor: theme.textMuted) {
                 permissionRow(
                     icon: "network", name: L10n.tr("Network Monitor"),
                     description: L10n.tr("Network Monitor Desc"),
-                    granted: true
+                    granted: isMonitoring
                 )
                 permissionRow(
                     icon: "pip", name: L10n.tr("Floating Window"),
                     description: L10n.tr("Floating Window Desc"),
-                    granted: true
+                    granted: settings.showFloatingWindow
                 )
             }
         }

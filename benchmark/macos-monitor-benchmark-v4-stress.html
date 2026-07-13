@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>macOS 网络监控 — 压力测试报告 (高流量场景)</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --orange: #d2991d; --red: #f85149;
+    --purple: #a371f7; --cyan: #39d2c0;
+  }
+  * { margin:0; padding:0; box-sizing:border-box }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,'SF Pro Display',system-ui,sans-serif; line-height:1.6; padding:40px 20px }
+  .container { max-width:1100px; margin:0 auto }
+  h1 { font-size:1.6rem; font-weight:700; color:#fff; margin-bottom:4px }
+  h2 { font-size:1.15rem; font-weight:600; color:#e6edf3; margin:32px 0 12px; padding-bottom:5px; border-bottom:1px solid var(--border) }
+  h3 { font-size:0.93rem; font-weight:600; margin:16px 0 8px; color:var(--muted) }
+  .subtitle { color:var(--muted); font-size:0.83rem; margin-bottom:24px }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:9px; padding:22px; margin-bottom:18px }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px }
+  .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:14px }
+  .grid4 { display:grid; grid-template-columns:repeat(4,1fr); gap:12px }
+  table { width:100%; border-collapse:collapse; margin:8px 0; font-size:0.87rem }
+  th,td { padding:9px 11px; text-align:center; border-bottom:1px solid var(--border); font-variant-numeric:tabular-nums }
+  th { color:var(--muted); font-weight:500; font-size:0.78rem; white-space:nowrap }
+  .best { font-weight:700; color:var(--green) }
+  .worst { color:var(--red) }
+  .stable { color:var(--accent) }
+  .delta-up { color:var(--red) }
+  .delta-down { color:var(--green) }
+  .metric-row { display:flex; align-items:center; gap:10px; margin:7px 0 }
+  .metric-label { width:170px; font-size:0.83rem; flex-shrink:0; text-align:right }
+  .metric-val { font-weight:600; width:55px; font-size:0.87rem }
+  .metric-bar-wrap { flex:1; background:var(--border); border-radius:3px; height:7px; overflow:hidden }
+  .metric-bar { height:100%; border-radius:3px }
+  .caveat { background:rgba(210,153,29,.07); border:1px solid rgba(210,153,29,.18); border-radius:8px; padding:13px 17px; margin:12px 0; font-size:0.83rem; color:var(--orange) }
+  .note { background:rgba(88,166,255,.05); border:1px solid rgba(88,166,255,.12); border-radius:8px; padding:11px 17px; margin:12px 0; font-size:0.82rem }
+  .tag { display:inline-block; padding:1px 7px; border-radius:9px; font-size:0.7rem; font-weight:600 }
+  .tag.g { background:rgba(63,185,80,.15); color:var(--green) }
+  .tag.y { background:rgba(210,153,29,.15); color:var(--orange) }
+  .tag.r { background:rgba(248,81,73,.15); color:var(--red) }
+  .tag.b { background:rgba(88,166,255,.12); color:var(--accent) }
+  hr { border:none; border-top:1px solid var(--border); margin:22px 0 }
+  .highlight-row { background:rgba(88,166,255,.03) }
+  .verdict-box { border-radius:10px; padding:18px 22px; margin:14px 0; background:var(--card); border:1px solid var(--border) }
+  @media(max-width:768px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>🌊 网络监控软件 — 高流量压力测试报告</h1>
+<p class="subtitle">
+  场景：curl 循环下载 2GB × 3 次 (共 ~6GB) 到 /dev/null 同时运行四款监控软件<br>
+  采样：2026-07-14 00:37-00:39 · 30 轮 × 2s = 60s · 下载文件服务器 218.204.38.218:9000<br>
+  <strong>与 v3 空闲测试对比，展示每种软件在"有大量网络流量通过"时的 CPU 响应行为</strong>
+</p>
+
+<!-- ====== 场景说明 ====== -->
+<div class="note">
+  <strong>📡 测试场景设计</strong><br>
+  循环下载 <code>http://218.204.38.218:9000/speed/2048000.data</code> (1.91 GB) × 3 次到 /dev/null。<br>
+  约 6GB 流量在 60s 内通过网卡，意味着每秒 ~100MB 的数据流量。<br>
+  所有监控软件都在实时追踪这次流量——这是它们"最忙"的时刻。
+</div>
+
+<!-- ====== 核心数据 ====== -->
+<h2>1. 压力场景 CPU 数据</h2>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>指标</th><th>NetMonitor<br><small>主进程</small></th><th>NetMonitor<br><small>含 nettop</small></th><th>Stats</th><th>HagimiMonitor</th><th>NetWorker Pro</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="text-align:left;font-weight:600">均值</td>
+        <td class="best">1.5%</td>
+        <td class="worst">16.4%</td>
+        <td>2.1%</td>
+        <td class="worst">8.8%</td>
+        <td>5.1%</td>
+      </tr>
+      <tr class="highlight-row">
+        <td style="text-align:left;font-weight:600">中位数 ★</td>
+        <td class="best">0.1%</td>
+        <td class="best">0.1%</td>
+        <td>0.9%</td>
+        <td class="worst">6.4%</td>
+        <td>2.8%</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-weight:600">P95</td>
+        <td class="best">4.3%</td>
+        <td class="worst">125.7%</td>
+        <td>6.9%</td>
+        <td class="worst">22.1%</td>
+        <td>17.2%</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-weight:600">最大值</td>
+        <td>15.2%</td>
+        <td class="worst">129.6%</td>
+        <td class="best">7.7%</td>
+        <td>24.6%</td>
+        <td>21.3%</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-weight:600">最小值</td>
+        <td class="best">0.0%</td>
+        <td class="best">0.0%</td>
+        <td class="best">0.0%</td>
+        <td>4.7%</td>
+        <td>0.4%</td>
+      </tr>
+      <tr>
+        <td style="text-align:left;font-weight:600">nettop 活跃</td>
+        <td colspan="2">4 / 30 (13.3%)</td>
+        <td>—</td>
+        <td>—</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ====== 关键对比 ====== -->
+<h2>2. 空闲 vs 压力 — 关键对比</h2>
+
+<div class="card">
+  <table>
+    <tr><th>软件</th><th>空闲均值</th><th>压力均值</th><th>增量</th><th>空闲中位数</th><th>压力中位数</th><th>评估</th></tr>
+    <tr>
+      <td style="text-align:left"><strong>NM 主进程</strong></td>
+      <td>1.4%</td>
+      <td>1.5%</td>
+      <td class="delta-down">+0.1%</td>
+      <td>0.2%</td>
+      <td>0.1%</td>
+      <td class="best">几乎无影响 ✅</td>
+    </tr>
+    <tr>
+      <td style="text-align:left"><strong>Stats</strong></td>
+      <td>1.5%</td>
+      <td>2.1%</td>
+      <td class="delta-up">+0.6%</td>
+      <td>1.0%</td>
+      <td>0.9%</td>
+      <td class="stable">轻微上升 (~40%)</td>
+    </tr>
+    <tr>
+      <td style="text-align:left"><strong>HagimiMonitor</strong></td>
+      <td>8.5%</td>
+      <td>8.8%</td>
+      <td class="delta-up">+0.3%</td>
+      <td>7.4%</td>
+      <td>6.4%</td>
+      <td class="stable">基本不变</td>
+    </tr>
+    <tr>
+      <td style="text-align:left"><strong>NetWorker Pro</strong></td>
+      <td>6.7%</td>
+      <td>5.1%</td>
+      <td class="delta-down">-1.6%</td>
+      <td>3.1%</td>
+      <td>2.8%</td>
+      <td>波动范围内</td>
+    </tr>
+  </table>
+
+  <div class="note" style="margin-top:14px">
+    <strong>💡 核心发现：</strong>在高流量场景下，NetMonitor 主进程几乎<strong>不受影响</strong>（+0.1% 均值）。
+    原因：NM 的流量采集用的是 IOReport（内核回调），下载速度变化不增加 CPU 开销。<br>
+    Stats 增加 ~40% — 它可能在每次刷新时做更多计算或 UI 渲染（下载速度数字变化更快 → 更多 UI 更新）。
+    Hagimi 和 NWP 变化不大，说明它们的瓶颈不在网速处理上。
+  </div>
+</div>
+
+<!-- ====== 内存变化 ====== -->
+<h2>3. 内存压力表现</h2>
+
+<div class="card">
+  <table>
+    <tr><th>软件</th><th>空闲 RSS</th><th>压力 RSS</th><th>增量</th><th>线程变化</th><th>评估</th></tr>
+    <tr><td><strong>NetMonitor</strong></td><td class="best">107 MB</td><td>110 MB</td><td class="delta-down">+3 MB</td><td>5→7</td><td class="best">✅ 极稳</td></tr>
+    <tr><td><strong>Stats</strong></td><td>114 MB</td><td>114 MB</td><td class="best">0 MB</td><td>16→17</td><td class="best">✅ 零增量</td></tr>
+    <tr><td><strong>HagimiMonitor</strong></td><td class="best">88 MB</td><td>89 MB</td><td class="delta-down">+1 MB</td><td>8→7</td><td class="best">✅ 极稳</td></tr>
+    <tr><td><strong>NetWorker Pro</strong></td><td>112 MB</td><td>117 MB</td><td class="delta-up">+5 MB</td><td>5→6</td><td>轻微增长</td></tr>
+  </table>
+
+  <p style="color:var(--muted);font-size:0.78rem;margin-top:10px">
+    内存方面四款软件都很健康，无泄漏迹象。压力增量均在 5 MB 以内。nettop 活跃时 NM 多开了 2 个线程（子进程）。
+  </p>
+</div>
+
+<!-- ====== 完整采样 ====== -->
+<h2>4. 完整采样数据</h2>
+<div class="card" style="overflow-x:auto;max-height:500px;overflow-y:auto">
+  <table style="font-size:0.81rem">
+    <tr><th>时间</th><th>NM 主</th><th>nettop</th><th>NM+net</th><th>Stats</th><th>Hagimi</th><th>NWPro</th></tr>
+    <tr><td>00:37:43</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>5.1</td><td class="worst">24.6</td><td>21.3</td></tr>
+    <tr><td>00:37:46</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>0.1</td><td class="worst">5.2</td><td>0.5</td></tr>
+    <tr><td>00:37:49</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>0.7</td><td class="worst">6.4</td><td>3.2</td></tr>
+    <tr><td>00:37:51</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>7.7</td><td>8.5</td><td class="worst">11.8</td></tr>
+    <tr><td>00:37:54</td><td class="best">4.3</td><td>0.0</td><td>4.3</td><td>0.2</td><td class="worst">5.8</td><td>0.7</td></tr>
+    <tr><td>00:37:57</td><td class="best">0.3</td><td>0.0</td><td>0.3</td><td>0.3</td><td class="worst">5.7</td><td>4.4</td></tr>
+    <tr style="background:rgba(248,81,73,.06)"><td>00:37:59</td><td>3.9</td><td class="worst">125.7</td><td class="worst">129.6</td><td>4.6</td><td>6.4</td><td>15.7</td></tr>
+    <tr><td>00:38:02</td><td>0.0</td><td>0.0</td><td>3.9</td><td class="best">0.0</td><td class="worst">6.6</td><td>0.8</td></tr>
+    <tr><td>00:38:05</td><td class="best">0.4</td><td>0.0</td><td>0.4</td><td>0.9</td><td class="worst">16.1</td><td>2.1</td></tr>
+    <tr><td>00:38:08</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>5.7</td><td class="worst">8.7</td><td>3.8</td></tr>
+    <tr><td>00:38:10</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>0.3</td><td class="worst">5.3</td><td>0.9</td></tr>
+    <tr><td>00:38:13</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>0.9</td><td class="worst">6.1</td><td>3.2</td></tr>
+    <tr><td>00:38:15</td><td class="best">0.1</td><td>0.0</td><td>0.1</td><td>6.0</td><td class="worst">22.1</td><td>17.2</td></tr>
+    <tr><td>00:38:18</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>0.1</td><td class="worst">7.0</td><td>0.4</td></tr>
+    <tr><td>00:38:21</td><td class="best">0.4</td><td>0.0</td><td>0.4</td><td>1.7</td><td class="worst">5.8</td><td>5.5</td></tr>
+    <tr style="background:rgba(248,81,73,.06)"><td>00:38:23</td><td>3.1</td><td class="worst">115.9</td><td class="worst">119.0</td><td>2.3</td><td class="worst">9.1</td><td>9.8</td></tr>
+    <tr><td>00:38:26</td><td>3.7</td><td>0.0</td><td>3.7</td><td class="best">0.0</td><td class="worst">6.7</td><td>4.6</td></tr>
+    <tr><td>00:38:29</td><td class="worst">15.2</td><td>0.0</td><td>15.2</td><td class="best">0.1</td><td>5.7</td><td>1.5</td></tr>
+    <tr><td>00:38:32</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>1.7</td><td class="worst">5.7</td><td>4.3</td></tr>
+    <tr style="background:rgba(248,81,73,.06)"><td>00:38:34</td><td>2.6</td><td class="worst">111.4</td><td class="worst">114.0</td><td>6.4</td><td>6.4</td><td>10.2</td></tr>
+    <tr><td>00:38:37</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>0.2</td><td class="worst">5.8</td><td>1.3</td></tr>
+    <tr><td>00:38:40</td><td class="best">0.5</td><td>0.0</td><td>0.5</td><td>1.4</td><td class="worst">16.7</td><td>4.6</td></tr>
+    <tr><td>00:38:42</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td class="best">0.0</td><td>4.7</td><td>0.9</td></tr>
+    <tr><td>00:38:45</td><td>0.9</td><td>0.0</td><td>0.9</td><td>0.9</td><td class="worst">5.8</td><td>2.3</td></tr>
+    <tr><td>00:38:48</td><td class="best">2.0</td><td>0.0</td><td>2.0</td><td class="worst">6.9</td><td>17.0</td><td>4.1</td></tr>
+    <tr><td>00:38:50</td><td>2.9</td><td>0.0</td><td>2.9</td><td class="best">0.1</td><td class="worst">5.8</td><td>1.7</td></tr>
+    <tr><td>00:38:53</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>1.0</td><td class="worst">6.5</td><td>2.4</td></tr>
+    <tr><td>00:38:56</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>2.4</td><td class="worst">7.8</td><td>4.5</td></tr>
+    <tr style="background:rgba(248,81,73,.06)"><td>00:38:58</td><td>0.1</td><td class="worst">95.8</td><td class="worst">95.9</td><td>5.6</td><td>10.4</td><td>14.3</td></tr>
+    <tr><td>00:39:01</td><td class="best">0.0</td><td>0.0</td><td>0.0</td><td>0.2</td><td class="worst">13.0</td><td>0.4</td></tr>
+  </table>
+  <p style="color:var(--muted);font-size:0.7rem;margin-top:8px">红色行 = nettop 活跃 · 绿色 = 该轮最优</p>
+</div>
+
+<!-- ====== 总结 ====== -->
+<h2>5. 总结</h2>
+
+<div class="verdict-box">
+  <table>
+    <tr><th style="width:120px">维度</th><th>NetMonitor</th><th>Stats</th><th>HagimiMonitor</th><th>NetWorker Pro</th></tr>
+    <tr>
+      <td><strong>压力敏感度</strong></td>
+      <td class="best">+0.1% (无视)</td>
+      <td>+0.6% (轻微)</td>
+      <td>+0.3% (无视)</td>
+      <td>-1.6% (无规律)</td>
+    </tr>
+    <tr>
+      <td><strong>内存压力</strong></td>
+      <td class="best">+3 MB</td>
+      <td class="best">0 MB</td>
+      <td class="best">+1 MB</td>
+      <td>+5 MB</td>
+    </tr>
+    <tr>
+      <td><strong>高流量下最稳定</strong></td>
+      <td class="best">主进程 ✅</td>
+      <td class="stable">✅</td>
+      <td class="stable">✅</td>
+      <td class="stable">✅</td>
+    </tr>
+  </table>
+
+  <div class="caveat" style="margin-top:14px">
+    <strong>📋 结论：</strong>下载 6GB 文件对四款软件的 CPU 影响都<strong>极小</strong>（≤0.6% 均值增量）。
+    监控软件本身不是网络流量的瓶颈——它们只是读取计数器，而计数器不关心流量大小。<br><br>
+    <strong>真正吃 CPU 的是 nettop</strong>（每次 96-126%），但它在压力场景和空闲场景下开销一致（都是 4 次/60s），不受下载流量影响。<br><br>
+    <strong>NetMonitor 的最大压力场景不是大流量，而是大量并发连接</strong>（nettop 需要解析的条目更多）——这需要更细粒度的测试（比如 BitTorrent 或数百个并发 HTTP 请求）。
+  </div>
+</div>
+
+<hr>
+
+<p style="text-align:center;color:var(--muted);font-size:0.7rem;margin-top:30px">
+  NetMonitor Stress Test · 压力测试报告 · 2026-07-14 00:37-00:39 CST<br>
+  30 轮 × 2s = 60s · curl 2GB×3 to /dev/null · macOS 26.2 · Intel x86_64 8核
+</p>
+
+</div>
+</body>
+</html>

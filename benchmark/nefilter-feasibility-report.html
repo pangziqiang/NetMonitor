@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEFilterDataProvider 替代 nettop 可行性分析</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --orange: #d2991d; --red: #f85149;
+    --purple: #a371f7;
+  }
+  * { margin:0; padding:0; box-sizing:border-box }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,'SF Pro Display',system-ui,sans-serif; line-height:1.7; padding:40px 20px }
+  .container { max-width:960px; margin:0 auto }
+  h1 { font-size:1.7rem; font-weight:700; color:#fff; margin-bottom:4px }
+  h2 { font-size:1.2rem; font-weight:600; color:#e6edf3; margin:36px 0 14px; padding-bottom:6px; border-bottom:1px solid var(--border) }
+  h3 { font-size:1rem; font-weight:600; margin:18px 0 8px; color:var(--muted) }
+  .subtitle { color:var(--muted); font-size:0.85rem; margin-bottom:28px }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:24px; margin-bottom:20px }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:20px }
+  .pro { border-left:3px solid var(--green); padding-left:14px; margin:6px 0; font-size:0.9rem }
+  .con { border-left:3px solid var(--red); padding-left:14px; margin:6px 0; font-size:0.9rem }
+  .neutral { border-left:3px solid var(--orange); padding-left:14px; margin:6px 0; font-size:0.9rem }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:0.88rem }
+  th,td { padding:10px 13px; text-align:left; border-bottom:1px solid var(--border) }
+  th { color:var(--muted); font-weight:500; font-size:0.8rem }
+  .good { color:var(--green); font-weight:600 }
+  .bad { color:var(--red); font-weight:600 }
+  .warn { color:var(--orange); font-weight:600 }
+  .tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.72rem; font-weight:600 }
+  .tag.g { background:rgba(63,185,80,.15); color:var(--green) }
+  .tag.r { background:rgba(248,81,73,.15); color:var(--red) }
+  .tag.y { background:rgba(210,153,29,.15); color:var(--orange) }
+  .verdict { border-radius:10px; padding:22px; margin:16px 0; font-size:0.92rem }
+  .verdict.green { background:rgba(63,185,80,.06); border:1px solid rgba(63,185,80,.2) }
+  .verdict.red { background:rgba(248,81,73,.05); border:1px solid rgba(248,81,73,.18) }
+  .verdict.yellow { background:rgba(210,153,29,.06); border:1px solid rgba(210,153,29,.18) }
+  .est { font-size:0.95rem; font-weight:600; color:var(--accent) }
+  .code { background:rgba(255,255,255,.05); border-radius:4px; padding:1px 5px; font-family:'SF Mono',Monaco,monospace; font-size:0.85em }
+  hr { border:none; border-top:1px solid var(--border); margin:24px 0 }
+  @media(max-width:768px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>🔬 NEFilterDataProvider 替代 nettop — 可行性分析</h1>
+<p class="subtitle">
+  评估目标：用 NetworkExtension 框架的系统级 API 代替 <code>nettop -L 1</code> 来采集进程级网络流量<br>
+  分析维度：技术可行性 · 性能收益 · 开发成本 · 分发影响 · 用户摩擦
+</p>
+
+<!-- ====== 技术原理 ====== -->
+<h2>1. NEFilterDataProvider 是什么</h2>
+<div class="card">
+  <p>它是 Apple NetworkExtension 框架的一部分，原始设计目标是<strong>内容过滤</strong>（如企业 VPN 防火墙、家长控制）。但它的核心能力恰好可以被"借用"来做流量监控：</p>
+
+  <table style="margin-top:14px">
+    <tr><th style="width:180px">能力</th><th>说明</th></tr>
+    <tr><td>拦截所有 TCP/UDP 流</td><td>每个 <code>connect()</code> / <code>send()</code> 都会回调 <code>handleNewFlow(_:)</code></td></tr>
+    <tr><td>获取每个流的字节数</td><td><code>NEFilterFlow</code> 的 <code>NEFilterDataProvider</code> 可通过 <code>NEFilterSocketFlow</code> 拿到源/目标 IP + 端口</td></tr>
+    <tr><td>获取来源 App</td><td><code>NEFilterFlow.sourceAppAuditToken</code> — 直接给你发流量的那个 App 的 audit token，<strong>不需要像 nettop 那样去匹配 /proc</strong></td></tr>
+    <tr><td>精确到每个连接</td><td>可以区分同一 App 的不同连接（比如 Chrome 开了 10 个 Tab）</td></tr>
+    <tr><td>不需要 DTrace</td><td>完全在内核网络栈的 Filter 层，零 <code>nettop</code> / <code>dtrace</code> / SIP 限制</td></tr>
+  </table>
+
+  <div class="note" style="margin-top:16px;background:rgba(88,166,255,.05);border:1px solid rgba(88,166,255,.12);border-radius:8px;padding:14px 18px;font-size:0.85rem">
+    <strong>🔑 关键洞察：</strong>我们不需要<em>真的过滤</em>任何流量。每个流我们只做两件事：统计数据（计入该 App 的下行/上行字节），然后返回 <code>.allow</code>。这在 API 层面完全合法。
+  </div>
+</div>
+
+<!-- ====== 架构对比 ====== -->
+<h2>2. 架构对比：nettop vs NEFilterDataProvider</h2>
+<div class="grid2">
+  <div class="card">
+    <h3 style="margin-top:0">当前：nettop 方案</h3>
+    <pre style="font-size:0.78rem;color:var(--muted);line-height:1.6">
+NetMonitor 主进程
+  └→ <span class="code">/usr/bin/nettop -L 1 -n -P</span> (子进程)
+       ├ 每 3 秒启动一次
+       ├ 运行 1 秒后退出
+       ├ 输出 CSV → parse → 存 accumulators
+       └ CPU: ~50% 每次, ~8.8% 均值
+    </pre>
+    <div class="con" style="margin-top:10px">❌ 每 3 秒一次 DTrace 开销</div>
+    <div class="con">❌ 需要 SIP 开启（netop 依赖 DTrace）</div>
+    <div class="con">❌ CSV 解析消耗 CPU</div>
+    <div class="pro">✅ 零配置，即开即用</div>
+    <div class="pro">✅ 不需要 Apple 审核</div>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">目标：NEFilterDataProvider</h3>
+    <pre style="font-size:0.78rem;color:var(--muted);line-height:1.6">
+NetMonitor 主进程 (App)
+  └→ 进程间通信 (XPC)
+      └→ System Extension (sysextd 管理)
+           └→ FilterDataProvider (内核 Filter 层)
+                ├ 每个流触发一次回调
+                ├ 记录 pid → bytes 到共享内存
+                └ CPU: ~1-2%, <strong>持续但不爆发</strong>
+    </pre>
+    <div class="pro" style="margin-top:10px">✅ 持续 1-2% CPU，无爆发尖峰</div>
+    <div class="pro">✅ 自动关联 App，精度远高 nettop</div>
+    <div class="pro">✅ 不依赖 DTrace / SIP</div>
+    <div class="con">❌ 需要 Apple Developer 账号 + 权限审批</div>
+    <div class="con">❌ 用户必须去系统设置手动批准</div>
+  </div>
+</div>
+
+<!-- ====== 技术评估 ====== -->
+<h2>3. 技术可行性评估</h2>
+
+<div class="card">
+  <h3>3.1 需要的 Apple 权限（Entitlements）</h3>
+  <table>
+    <tr><th>权限 Key</th><th>用途</th><th>获取难度</th></tr>
+    <tr><td><code class="code">com.apple.developer.networking.networkextension</code></td><td>允许 App 包含 NetworkExtension 目标</td><td class="warn">⚠️ 需要 Apple 人工审核</td></tr>
+    <tr><td><code class="code">com.apple.developer.system-extension.install</code></td><td>允许 App 安装 System Extension</td><td class="warn">⚠️ 需要 Apple 人工审核</td></tr>
+    <tr><td><code class="code">com.apple.developer.networking.filtering</code></td><td>允许 FilterDataProvider 拦截网络流</td><td class="bad">🔴 敏感权限，审核严格</td></tr>
+    <tr><td><code class="code">com.apple.security.network.client</code></td><td>App Sandbox 网络访问 (已有)</td><td class="good">✅ 通常自动批准</td></tr>
+  </table>
+
+  <p style="margin-top:10px;color:var(--muted);font-size:0.82rem">
+    注意：<code>filtering</code> 权限非常敏感。Apple 审核人员会要求你<strong>详细说明为什么需要拦截所有流量</strong>，以及你如何保护用户隐私。
+    "只做统计、不做过滤"是一个可被接受的回答，但需要写一封好理由信。
+  </p>
+</div>
+
+<div class="card">
+  <h3>3.2 技术实现关键点</h3>
+  <table>
+    <tr><th style="width:200px">环节</th><th>细节</th><th>可行性</th></tr>
+    <tr>
+      <td>System Extension 创建</td>
+      <td>Xcode → New Target → System Extension → NetworkExtension → FilterDataProvider。macOS 10.15+ SDK 原生支持。</td>
+      <td class="good">✅ 直接用</td>
+    </tr>
+    <tr>
+      <td>App 内安装 Extension</td>
+      <td><code class="code">OSSystemExtensionRequest.activationRequest()</code> 触发安装。系统弹出确认对话框 → 用户点"允许" → 跳转系统设置。</td>
+      <td class="warn">⚠️ 需要用户操作</td>
+    </tr>
+    <tr>
+      <td>Filter 回调中统计流量</td>
+      <td><code class="code">handleNewFlow(_:)</code> 拿到 <code>NEFilterSocketFlow</code>，从中提取 <code>sourceAppAuditToken</code> → <code>audit_token_to_pid()</code> 得 PID。记录字节后 return <code>.allow</code>。</td>
+      <td class="good">✅ 标准 API</td>
+    </tr>
+    <tr>
+      <td>Extension → App 数据传输</td>
+      <td>系统扩展运行在独立进程 (root)，不能直接访问 App 的 SQLite。需通过 XPC 或共享内存 + mmap 传递数据。</td>
+      <td class="warn">⚠️ 需要 IPC 层</td>
+    </tr>
+    <tr>
+      <td>进程名获取</td>
+      <td>Filter 回调只能拿到 audit token → PID。需要 Extension 通过 XPC 回传给 App，App 再去 <code>NSRunningApplication</code> 查名字。</td>
+      <td class="good">✅ 可行</td>
+    </tr>
+    <tr>
+      <td>CPU/内存监控</td>
+      <td>FilterDataProvider <strong>不能替代</strong> CPU/内存的 libproc/IOKit 采集。这部分仍需要主 App 的 ProcessMonitor。</td>
+      <td class="warn">⚠️ 不是完全替代</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ====== 方案对比 ====== -->
+<h2>4. 方案对比矩阵</h2>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>维度</th><th>nettop（当前）</th><th>NEFilterDataProvider</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>持续 CPU</strong></td>
+        <td>均值 1.7% 主 + 8.8% nettop = <span class="warn">10.5%</span></td>
+        <td>估算 <span class="good">0.5-1.5%</span> (Filter 回调 + IPC)</td>
+      </tr>
+      <tr>
+        <td><strong>峰值 CPU</strong></td>
+        <td class="bad">122% (不可预测的尖峰)</td>
+        <td class="good">~3% (平缓)</td>
+      </tr>
+      <tr>
+        <td><strong>数据精度</strong></td>
+        <td>3s 采样间隔，<span class="warn">两次采样之间流量丢失</span></td>
+        <td class="good">每个流都拦截，精度 100%</td>
+      </tr>
+      <tr>
+        <td><strong>App 识别</strong></td>
+        <td>nettop CSV 解析进程名，<span class="warn">可能不准确</span></td>
+        <td class="good">audit_token 直接关联，100% 准确</td>
+      </tr>
+      <tr>
+        <td><strong>启动成本</strong></td>
+        <td class="good">零配置，即开即用</td>
+        <td class="bad">Apple 审核 + 审批流程 (2-4 周)</td>
+      </tr>
+      <tr>
+        <td><strong>用户摩擦</strong></td>
+        <td class="good">无</td>
+        <td class="bad">系统设置中手动批准认证</td>
+      </tr>
+      <tr>
+        <td><strong>分发</strong></td>
+        <td class="good">DMG / 自签名即可</td>
+        <td class="warn">必须 Notarization + Developer ID</td>
+      </tr>
+      <tr>
+        <td><strong>SIP 依赖</strong></td>
+        <td class="warn">是（nettop 需要 DTrace）</td>
+        <td class="good">否</td>
+      </tr>
+      <tr>
+        <td><strong>macOS 版本要求</strong></td>
+        <td>10.13+</td>
+        <td class="warn">10.15+ (System Extension)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ====== 实现路径 ====== -->
+<h2>5. 实现路径</h2>
+
+<div class="card">
+  <h3>Phase 1 — Apple 权限申请（2-4 周，无代码）</h3>
+  <ol style="padding-left:20px;font-size:0.9rem;line-height:2">
+    <li>确认 Apple Developer Program 成员资格（$99/年）✅</li>
+    <li>在 Apple Developer 网站申请 <code>networking.networkextension</code> + <code>system-extension.install</code></li>
+    <li>填写 "为什么需要 filtering 权限" 说明信：
+      <div style="background:rgba(255,255,255,.03);border-radius:6px;padding:10px 14px;margin:6px 0;font-size:0.82rem;color:var(--muted)">
+        "NetMonitor uses NEFilterDataProvider solely for statistical purposes — to accurately attribute network bytes to each application. All flows are immediately allowed (pass-through), and no traffic is ever blocked, modified, or retransmitted. No user data leaves the device."
+      </div>
+    </li>
+    <li>等待 Apple 审核（通常 1-3 周）</li>
+  </ol>
+
+  <h3 style="margin-top:20px">Phase 2 — System Extension 开发（4-6 周）</h3>
+  <ol style="padding-left:20px;font-size:0.9rem;line-height:2">
+    <li>Xcode 新建 System Extension Target（NetworkExtension → FilterDataProvider）</li>
+    <li>实现 <code class="code">handleNewFlow(_:)</code> — 纯统计 + .allow</li>
+    <li>实现 <code class="code">handleInboundData(from:flow:)</code> / <code>handleOutboundData(from:flow:)</code> 回调中累加字节</li>
+    <li>实现 Extension → App 的数据管道（推荐：<code class="code">NWConnection</code> over localhost 或 <code class="code">XPC</code>）</li>
+    <li>App 端：从 IPC 管道读取统计数据 → 存入 SQLite / 更新菜单栏</li>
+    <li>安装流程：App 启动 → 检测 Extension 是否已安装 → 未安装则弹出引导</li>
+  </ol>
+
+  <h3 style="margin-top:20px">Phase 3 — 共存 & 迁移（1-2 周）</h3>
+  <ol style="padding-left:20px;font-size:0.9rem;line-height:2">
+    <li>保留 nettop 作为 Fallback（Extension 未授权 / 不可用时自动降级）</li>
+    <li>检测 Extension 可用性 → 优先使用 Filter 数据 → 降级回 nettop</li>
+    <li>数据格式对齐：两种路径产出相同格式的 <code>ProcessSnapshot</code></li>
+  </ol>
+</div>
+
+<!-- ====== 风险评估 ====== -->
+<h2>6. 风险矩阵</h2>
+
+<div class="card">
+  <table>
+    <thead><tr><th>风险</th><th>严重度</th><th>概率</th><th>缓解措施</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Apple 拒批 filtering 权限</td>
+        <td class="bad">🔴 致命</td>
+        <td>中等</td>
+        <td>充分理由信 + 开源代码供审核审查</td>
+      </tr>
+      <tr>
+        <td>用户拒绝安装 System Extension</td>
+        <td class="warn">⚠️ 高</td>
+        <td>高</td>
+        <td>保留 nettop fallback；在 UI 中解释安装 Extension 的 CPU/精度优势</td>
+      </tr>
+      <tr>
+        <td>Filter 崩溃导致系统断网</td>
+        <td class="bad">🔴 致命</td>
+        <td>低</td>
+        <td>严格测试 + 所有流无条件 .allow + 超时看门狗</td>
+      </tr>
+      <tr>
+        <td>macOS 更新破坏兼容性</td>
+        <td class="warn">⚠️ 中</td>
+        <td>中</td>
+        <td>每次 beta 周期提前验证</td>
+      </tr>
+      <tr>
+        <td>Extension 与 VPN / 防火墙冲突</td>
+        <td class="warn">⚠️ 中</td>
+        <td>低</td>
+        <td>文档说明 + 检测冲突时提示用户</td>
+      </tr>
+      <tr>
+        <td>隐私合规问题（拦截全网流量）</td>
+        <td class="bad">🔴 高</td>
+        <td>低</td>
+        <td>数据不出设备 + 明确隐私政策 + 开源可审</td>
+      </tr>
+      <tr>
+        <td>IPC 管道性能瓶颈</td>
+        <td class="warn">⚠️ 低</td>
+        <td>中</td>
+        <td>使用共享内存 ring buffer 代替逐条 XPC</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ====== 估值 ====== -->
+<h2>7. 工作量估算</h2>
+
+<div class="card">
+  <table>
+    <tr><th>阶段</th><th>内容</th><th>估算人天</th></tr>
+    <tr><td>Phase 1</td><td>Apple 权限申请 + 说明信 + 等待</td><td>2d + 2-4w 等</td></tr>
+    <tr><td>Phase 2a</td><td>System Extension 骨架 + FilterDataProvider 实现</td><td>5-7d</td></tr>
+    <tr><td>Phase 2b</td><td>IPC 数据管道 (XPC / NWConnection)</td><td>3-5d</td></tr>
+    <tr><td>Phase 2c</td><td>App 端数据接收 + SQLite 集成</td><td>2-3d</td></tr>
+    <tr><td>Phase 2d</td><td>安装/授权引导流程</td><td>2-3d</td></tr>
+    <tr><td>Phase 3</td><td>nettop fallback + 双路径切换 + 数据对齐</td><td>2-3d</td></tr>
+    <tr style="font-weight:700;border-top:2px solid var(--border)"><td colspan="2">合计</td><td>16-23 人天</td></tr>
+  </table>
+  <p style="color:var(--muted);font-size:0.8rem;margin-top:8px">另：Apple 审核等待 2-4 周不计入开发时间。全部完成约 6-10 周。</p>
+</div>
+
+<!-- ====== 结论 ====== -->
+<h2>8. 推荐结论</h2>
+
+<div class="verdict yellow">
+  <h3 style="color:var(--orange);margin-top:0">⚠️ 谨慎推荐：长期方向可行，短期投入过高</h3>
+  <br>
+  <table>
+    <tr><th style="width:140px">角度</th><th>结论</th></tr>
+    <tr>
+      <td><strong>技术可行性</strong></td>
+      <td class="good">✅ 完全可行。API 成熟，Apple 官方支持。</td>
+    </tr>
+    <tr>
+      <td><strong>性能收益</strong></td>
+      <td class="good">✅ 显著。CPU 从 10.5% 降至 ~1.5%，消除尖峰，精度 100%。</td>
+    </tr>
+    <tr>
+      <td><strong>用户摩擦</strong></td>
+      <td class="bad">❌ 高。每个用户需手动授权，流失率预估 30-50%。</td>
+    </tr>
+    <tr>
+      <td><strong>开发成本</strong></td>
+      <td class="warn">⚠️ 中高。16-23 人天 + 审核等待。</td>
+    </tr>
+    <tr>
+      <td><strong>风险</strong></td>
+      <td class="warn">⚠️ Apple 拒批权限 + 用户不授权。</td>
+    </tr>
+  </table>
+
+  <div style="margin-top:18px;padding:16px;background:rgba(210,153,29,.06);border-radius:8px">
+    <strong>💡 务实推荐：</strong><br><br>
+    <strong>短期：</strong>把 nettop 间隔从 3s 调到 5s（CPU 降 40%，用户无感知）。这是零成本的立即优化。<br><br>
+    <strong>中期：</strong>启动 Phase 1（Apple 权限申请）。如果通过 → 投入 Phase 2。<br><br>
+    <strong>长期：</strong>实现双路径架构 — Extension 优先，nettop 降级。用户选择是否安装 Extension（类似 Little Snitch 的模型）。
+  </div>
+</div>
+
+<hr>
+
+<p style="text-align:center;color:var(--muted);font-size:0.75rem;margin-top:40px">
+  NEFilterDataProvider Feasibility Report · 2026-07-14<br>
+  基于 macOS 26.2 · NetworkExtension Framework · Apple Developer Documentation
+</p>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>macOS 网络监控 — 三维压力测试总报告</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --orange: #d2991d; --red: #f85149;
+  }
+  * { margin:0; padding:0; box-sizing:border-box }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,'SF Pro Display',system-ui,sans-serif; line-height:1.6; padding:40px 20px }
+  .container { max-width:1140px; margin:0 auto }
+  h1 { font-size:1.6rem; font-weight:700; color:#fff; margin-bottom:4px }
+  h2 { font-size:1.15rem; font-weight:600; color:#e6edf3; margin:32px 0 12px; padding-bottom:5px; border-bottom:1px solid var(--border) }
+  h3 { font-size:0.93rem; font-weight:600; margin:16px 0 8px; color:var(--muted) }
+  .subtitle { color:var(--muted); font-size:0.82rem; margin-bottom:24px }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:9px; padding:22px; margin-bottom:18px }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px }
+  table { width:100%; border-collapse:collapse; margin:8px 0; font-size:0.86rem }
+  th,td { padding:9px 11px; text-align:center; border-bottom:1px solid var(--border); font-variant-numeric:tabular-nums }
+  th { color:var(--muted); font-weight:500; font-size:0.77rem }
+  .best { font-weight:700; color:var(--green) }
+  .worst { color:var(--red) }
+  .note { background:rgba(88,166,255,.05); border:1px solid rgba(88,166,255,.12); border-radius:8px; padding:11px 17px; margin:12px 0; font-size:0.82rem }
+  .caveat { background:rgba(210,153,29,.07); border:1px solid rgba(210,153,29,.18); border-radius:8px; padding:13px 17px; margin:12px 0; font-size:0.83rem; color:var(--orange) }
+  .meter-bar { display:inline-block; height:10px; border-radius:5px; min-width:3px; vertical-align:middle; margin-right:6px }
+  .c1 { background:var(--green) } .c2 { background:var(--accent) } .c3 { background:var(--orange) } .c4 { background:var(--red) }
+  hr { border:none; border-top:1px solid var(--border); margin:22px 0 }
+  @media(max-width:768px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>🧪 网络监控软件 — 三维压力测试总报告</h1>
+<p class="subtitle">
+  三种场景 × 四款软件 × 同等条件 · 2026-07-14 凌晨 · macOS 26.2 · Intel x86_64 8核<br>
+  场景 A: 空闲 · 场景 B: 6GB 带宽压力 · 场景 C: 200 并发连接压力
+</p>
+
+<!-- ====== 总表 ====== -->
+<h2>1. 三种场景 CPU 均值对比</h2>
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>软件</th><th>🟢 空闲</th><th>🔵 6GB 带宽</th><th>🟠 200 并发</th><th>最大值</th><th>波动范围</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="text-align:left"><strong>NetMonitor 主进程</strong></td>
+        <td class="best">1.4%</td>
+        <td>1.5%</td>
+        <td>1.6%</td>
+        <td>1.6%</td>
+        <td><span class="meter-bar c1" style="width:28px"></span> 0.2%</td>
+      </tr>
+      <tr>
+        <td style="text-align:left"><strong>Stats</strong></td>
+        <td>1.5%</td>
+        <td>2.1%</td>
+        <td class="best">1.5%</td>
+        <td>2.1%</td>
+        <td><span class="meter-bar c2" style="width:14px"></span> 0.6%</td>
+      </tr>
+      <tr>
+        <td style="text-align:left"><strong>HagimiMonitor</strong></td>
+        <td>8.5%</td>
+        <td>8.8%</td>
+        <td>8.0%</td>
+        <td class="worst">8.8%</td>
+        <td><span class="meter-bar c3" style="width:16px"></span> 0.8%</td>
+      </tr>
+      <tr>
+        <td style="text-align:left"><strong>NetWorker Pro</strong></td>
+        <td>6.7%</td>
+        <td>5.1%</td>
+        <td>4.3%</td>
+        <td>6.7%</td>
+        <td><span class="meter-bar c4" style="width:48px"></span> 2.4%</td>
+      </tr>
+      <tr style="border-top:2px solid var(--border);opacity:0.6">
+        <td style="text-align:left">NM + nettop</td>
+        <td>13.2%</td>
+        <td>16.4%</td>
+        <td>12.6%</td>
+        <td>16.4%</td>
+        <td>3.8%</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ====== 可视化 ====== -->
+<h2>2. 三维度可视化 — 均值 CPU</h2>
+<div class="card">
+  <table>
+    <tr><th style="text-align:left">软件</th><th>空闲 → 带宽 → 并发</th><th>趋势</th></tr>
+    <tr>
+      <td style="text-align:left;font-weight:600">NetMonitor</td>
+      <td>
+        <span class="meter-bar c1" style="width:14px"></span>1.4%
+        <span class="meter-bar c1" style="width:15px"></span>1.5%
+        <span class="meter-bar c1" style="width:16px"></span>1.6%
+      </td>
+      <td class="best">→ 平如镜面</td>
+    </tr>
+    <tr>
+      <td style="text-align:left;font-weight:600">Stats</td>
+      <td>
+        <span class="meter-bar c2" style="width:15px"></span>1.5%
+        <span class="meter-bar c2" style="width:21px"></span>2.1%
+        <span class="meter-bar c2" style="width:15px"></span>1.5%
+      </td>
+      <td>↗↘ 带宽敏感</td>
+    </tr>
+    <tr>
+      <td style="text-align:left;font-weight:600">HagimiMonitor</td>
+      <td>
+        <span class="meter-bar c3" style="width:85px"></span>8.5%
+        <span class="meter-bar c3" style="width:88px"></span>8.8%
+        <span class="meter-bar c3" style="width:80px"></span>8.0%
+      </td>
+      <td class="best">→ 稳定 (基值高)</td>
+    </tr>
+    <tr>
+      <td style="text-align:left;font-weight:600">NetWorker Pro</td>
+      <td>
+        <span class="meter-bar c4" style="width:67px"></span>6.7%
+        <span class="meter-bar c4" style="width:51px"></span>5.1%
+        <span class="meter-bar c4" style="width:43px"></span>4.3%
+      </td>
+      <td>↘↘ 反而下降</td>
+    </tr>
+  </table>
+  <p style="color:var(--muted);font-size:0.72rem;margin-top:10px">比例尺: 1px = 0.1% CPU · NWP 下降可能是 curl 进程抢占 CPU 采样窗口导致读数偏低</p>
+</div>
+
+<!-- ====== 中位数 ====== -->
+<h2>3. 中位数 CPU（三种场景取最差）</h2>
+<div class="card">
+  <table>
+    <tr><th>软件</th><th>空闲中位数</th><th>带宽压力中位数</th><th>200并发中位数</th><th>综合</th></tr>
+    <tr><td><strong>NetMonitor</strong></td><td class="best">0.2%</td><td class="best">0.1%</td><td class="best">0.1%</td><td class="best">🥇 ~0.1%</td></tr>
+    <tr><td><strong>Stats</strong></td><td>1.0%</td><td>0.9%</td><td>0.9%</td><td>🥈 ~0.9%</td></tr>
+    <tr><td><strong>NetWorker Pro</strong></td><td>3.1%</td><td>2.8%</td><td>2.8%</td><td>🥉 ~2.9%</td></tr>
+    <tr><td><strong>HagimiMonitor</strong></td><td class="worst">7.4%</td><td class="worst">6.4%</td><td class="worst">5.9%</td><td class="worst">~6.6%</td></tr>
+  </table>
+</div>
+
+<!-- ====== P95 ====== -->
+<h2>4. 最差情况 (P95) — 压力下的尖峰</h2>
+<div class="card">
+  <table>
+    <tr><th>软件</th><th>空闲 P95</th><th>带宽 P95</th><th>并发 P95</th><th>最差尖峰</th><th>评级</th></tr>
+    <tr><td><strong>Stats</strong></td><td class="best">5.4%</td><td class="best">6.9%</td><td class="best">4.6%</td><td class="best">6.9%</td><td class="best">✅ 极稳定</td></tr>
+    <tr><td><strong>NetMonitor 主进程</strong></td><td>6.6%</td><td>4.3%</td><td>7.9%</td><td>7.9%</td><td>✅ 稳定</td></tr>
+    <tr><td><strong>NetWorker Pro</strong></td><td>20.9%</td><td>17.2%</td><td class="worst">10.2%</td><td>20.9%</td><td class="worst">⚠️ 波动大</td></tr>
+    <tr><td><strong>HagimiMonitor</strong></td><td class="worst">17.6%</td><td>22.1%</td><td>20.2%</td><td class="worst">22.1%</td><td class="worst">⚠️ 持续高</td></tr>
+  </table>
+</div>
+
+<!-- ====== 内存漂移 ====== -->
+<h2>5. 内存漂移（三种场景累计）</h2>
+<div class="card">
+  <table>
+    <tr><th>软件</th><th>空闲 RSS</th><th>带宽压力 RSS</th><th>并发压力 RSS</th><th>总增量</th><th>评估</th></tr>
+    <tr><td><strong>HagimiMonitor</strong></td><td>88 MB</td><td>89 MB</td><td>89 MB</td><td class="best">+1 MB</td><td class="best">✅</td></tr>
+    <tr><td><strong>NetMonitor</strong></td><td>107 MB</td><td>110 MB</td><td>110 MB</td><td>+3 MB</td><td>✅</td></tr>
+    <tr><td><strong>Stats</strong></td><td>114 MB</td><td>114 MB</td><td>114 MB</td><td>0 MB</td><td class="best">✅ 零漂移</td></tr>
+    <tr><td><strong>NetWorker Pro</strong></td><td>112 MB</td><td>117 MB</td><td>120 MB</td><td class="worst">+8 MB</td><td>⚠️ 缓慢增长</td></tr>
+  </table>
+</div>
+
+<!-- ====== 关键洞察 ====== -->
+<h2>6. 关键洞察</h2>
+
+<div class="card">
+  <div class="grid2">
+    <div>
+      <h3>🔍 监控软件天生抗压</h3>
+      <p style="font-size:0.85rem;color:var(--muted)">
+        网速监控的 CPU 成本主要来自"读计数器"（IOReport / getifaddrs / nettop），
+        不是来自"处理流量"。无论网卡跑 1KB/s 还是 100MB/s，读计数器的开销一样。
+        就像车速表——读表盘不花钱，花的是造表盘的钱。<br><br>
+        <strong>真正吃 CPU 的是连接数</strong>（对 nettop 而言），但 200 并发也没让 nettop 比 20 并发更贵。
+        原因：nettop 的 CSV 输出行数取决于进程数，不是连接数。200 个连接如果都是 curl，nettop 只输出 1 行 (curl)。
+      </p>
+    </div>
+    <div>
+      <h3>📊 各软件压力画像</h3>
+      <table style="font-size:0.82rem">
+        <tr><td>NetMonitor</td><td>主进程无视任何压力。瓶颈是 nettop 子进程</td></tr>
+        <tr><td>Stats</td><td>带宽微敏感 (+0.6%)。连接无所谓</td></tr>
+        <tr><td>HagimiMonitor</td><td>基线偏高 (8%)，但几乎不受压力影响</td></tr>
+        <tr><td>NetWorker Pro</td><td>波动最大 (1.4-6.7%)，趋势反而随压力下降</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="caveat" style="margin-top:16px">
+  <strong>⚠️ 局限性：</strong>200 并发连接全是 curl 进程，nettop 将其合并为一行。
+  真正的"压力"是 <strong>200 个不同进程</strong> 各自产生网络流量——那会让 nettop 的 CSV 行数暴增 200 倍，CPU 也会暴增。<br><br>
+  要模拟这种压力，需要 200 个不同名字的进程（比如 docker 容器、很多不同 App 同时下载），
+  这在自动化测试中很难实现。建议在 BitTorrent 下载 + Steam 更新 + 多浏览器看视频的混合场景下手工观察。
+</div>
+
+<hr>
+<p style="text-align:center;color:var(--muted);font-size:0.7rem;margin-top:30px">
+  NetMonitor 三维压力测试总报告 · 2026-07-14 · macOS 26.2 · Intel x86_64 · 30轮×2s 每场景
+</p>
+</div>
+</body>
+</html>

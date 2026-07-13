@@ -129,7 +129,7 @@ public class DatabaseManager {
             do { try self.exec("BEGIN IMMEDIATE") } catch { os_log("BEGIN IMMEDIATE failed: %{public}@", log: log, type: .error, error.localizedDescription as NSString) }
             _insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
             _updateDaily(date: dateStr, down: down, up: up)
-            try? self.exec("COMMIT")
+            do { try self.exec("COMMIT") } catch { os_log("deinit COMMIT failed: %{public}@", log: log, type: .error, error.localizedDescription as NSString) }
         }
         
         let dbToClose = db
@@ -395,7 +395,7 @@ public class DatabaseManager {
             do { try self.exec("BEGIN IMMEDIATE") } catch { os_log("BEGIN IMMEDIATE failed: %{public}@", log: log, type: .error, error.localizedDescription as NSString) }
             self._insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
             self._updateDaily(date: dateStr, down: down, up: up)
-            try? self.exec("COMMIT")
+            do { try self.exec("COMMIT") } catch { os_log("flushIfNeeded COMMIT failed: %{public}@", log: log, type: .error, error.localizedDescription as NSString) }
             
             // Run retention once per hour (not every 15 min)
             let hour = Calendar.current.component(.hour, from: now)
@@ -456,7 +456,7 @@ public class DatabaseManager {
             do { try self.exec("BEGIN IMMEDIATE") } catch { os_log("BEGIN IMMEDIATE failed: %{public}@", log: log, type: .error, error.localizedDescription as NSString) }
             self._insertMinutely(ts: ts, down: down, up: up, peakDown: peakD, peakUp: peakU, processes: procs)
             self._updateDaily(date: dateStr, down: down, up: up)
-            try? self.exec("COMMIT")
+            do { try self.exec("COMMIT") } catch { os_log("flushSync COMMIT failed: %{public}@", log: log, type: .error, error.localizedDescription as NSString) }
         }
     }
 

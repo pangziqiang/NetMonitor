@@ -12,6 +12,8 @@ final class ProcessNetworkReader {
     private var isRunning = false
     private var isStopping = false
     private let lock = NSLock()
+    private var retryCount = 0
+    private let maxRetries = 5
 
     private let minuteFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -98,6 +100,7 @@ final class ProcessNetworkReader {
         }
 
         self.task = task
+        retryCount = 0  // successful launch resets retry count
         os_log("nettop reader started (continuous, high precision)", log: .default, type: .info)
 
         let reader = pipe.fileHandleForReading
@@ -124,7 +127,21 @@ final class ProcessNetworkReader {
     }
 
     private func scheduleRestart() {
-        queue.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+        retryCount += 1
+        guard retryCount <= maxRetries else {
+            os_log("nettop: max retries (%d) reached, stopping", log: .default, type: .error, maxRetries)
+            return
+        }
+        let delay: Double
+        switch retryCount {
+        case 1: delay = 10.0
+        case 2: delay = 20.0
+        case 3: delay = 40.0
+        case 4: delay = 80.0
+        default: delay = 160.0
+        }
+        os_log("nettop restart #%d in %.0fs", log: .default, type: .info, retryCount, delay)
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, !self.isStopping else { return }
             self.lock.lock()
             let shouldRestart = !self.isRunning
