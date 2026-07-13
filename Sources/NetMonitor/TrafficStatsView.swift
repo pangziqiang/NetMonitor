@@ -44,7 +44,6 @@ struct TrafficStatsView: View {
     @State private var selectedDateStr: String = ""
     @State private var availableDateStrs: [String] = []
     @State private var refreshTimer: Timer?
-    @State private var minutelyLoadedForToday = false
 
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
     private let cfg = BarChartConfig.shared
@@ -66,7 +65,6 @@ struct TrafficStatsView: View {
         .frame(minWidth: cfg.pW, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
         .background(theme.appBg)
         .onAppear {
-            minutelyLoadedForToday = false
             refreshTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
                 DatabaseManager.shared?.flushPendingTrafficSync()
                 loadData()
@@ -429,74 +427,30 @@ struct TrafficStatsView: View {
         let tzOffset = TimeZone.current.secondsFromGMT() / 3600
 
         if isToday {
-            // Phase 1: Immediate render with hourly table + engine live delta
-            let hourlyData = db.dailyHourlyTraffic(for: localDate)
+            // Single synchronous render from traffic_minutely + engine delta
+            let todayCount = db.minutelyTraffic(from: startLocal, to: endLocal)
             var dn = [UInt64](repeating: 0, count: 24)
             var up = [UInt64](repeating: 0, count: 24)
             var hasDataArr = [Bool](repeating: false, count: 24)
-            for (utcHour, down, upVal) in hourlyData {
-                let localHour = (utcHour + tzOffset + 24) % 24
-                if localHour >= 0 && localHour < 24 {
-                    dn[localHour] = down
-                    up[localHour] = upVal
-                    hasDataArr[localHour] = down > 0 || upVal > 0
-                }
+            for record in todayCount {
+                let h = localCal.component(.hour, from: record.time)
+                guard h >= 0 && h < 24 else { continue }
+                dn[h] += record.down
+                up[h] += record.up
+                hasDataArr[h] = true
             }
-            // Live delta for current hour
-            let phase1SumDn = dn.reduce(0, +)
-            let phase1SumUp = up.reduce(0, +)
-            if engine.todayDown > phase1SumDn {
-                dn[nowLocal] += engine.todayDown - phase1SumDn
+            // Engine live delta: ALL traffic since midnight that minutely hasn't captured
+            let minutelyTotal = dn.reduce(0, +)
+            if engine.todayDown > minutelyTotal {
+                dn[nowLocal] += engine.todayDown - minutelyTotal
                 hasDataArr[nowLocal] = true
             }
-            if engine.todayUp > phase1SumUp {
-                up[nowLocal] += engine.todayUp - phase1SumUp
+            let upMinutelyTotal = up.reduce(0, +)
+            if engine.todayUp > upMinutelyTotal {
+                up[nowLocal] += engine.todayUp - upMinutelyTotal
                 hasDataArr[nowLocal] = true
             }
             renderDayPage(dn: dn, up: up, hasData: hasDataArr, isToday: true, nowLocal: nowLocal)
-
-            // Phase 2: Async minutely refinement — merge on top of Phase 1, fill hours without data
-            if !minutelyLoadedForToday {
-                minutelyLoadedForToday = true
-                let phaseDn = dn
-                let phaseUp = up
-                let phaseHas = hasDataArr
-                db.minutelyTrafficAsync(from: startLocal, to: endLocal) { minutelyData in
-                    var newDn = phaseDn
-                    var newUp = phaseUp
-                    var newHas = phaseHas
-                    var minHas = [Bool](repeating: false, count: 24)
-                    for record in minutelyData {
-                        let h = localCal.component(.hour, from: record.time)
-                        guard h >= 0 && h < 24 else { continue }
-                        if !minHas[h] {
-                            // First record for this hour: replace Phase 1 value
-                            newDn[h] = record.down
-                            newUp[h] = record.up
-                            minHas[h] = true
-                        } else {
-                            // Subsequent records: accumulate
-                            newDn[h] += record.down
-                            newUp[h] += record.up
-                        }
-                        newHas[h] = true
-                    }
-                    // Live delta for current hour
-                    let sDn = newDn.reduce(0, +)
-                    let sUp = newUp.reduce(0, +)
-                    if self.engine.todayDown > sDn {
-                        newDn[nowLocal] += self.engine.todayDown - sDn
-                        newHas[nowLocal] = true
-                    }
-                    if self.engine.todayUp > sUp {
-                        newUp[nowLocal] += self.engine.todayUp - sUp
-                        newHas[nowLocal] = true
-                    }
-                    DispatchQueue.main.async {
-                        self.renderDayPage(dn: newDn, up: newUp, hasData: newHas, isToday: true, nowLocal: nowLocal)
-                    }
-                }
-            }
         } else {
             // Past days: hourly table is complete, instant render
             let hourlyData = db.dailyHourlyTraffic(for: localDate)
