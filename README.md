@@ -45,6 +45,12 @@ macOS 菜单栏网络监控应用，实时显示网速、CPU/GPU/内存使用率
 - **打开活动监视器** — 进程区标题栏按钮一键跳转
 - **四模式排序** — `ForEach(ProcessSortMode.allCases)` 消除重复代码
 - **自身行高亮** — NetMonitor 进程单独分组，浅绿背景
+- **后台常驻监控** — `ProcessNetworkReader` 持续运行 `nettop -P -L 0 -n`，24/7 采集进程级流量，不受弹窗开关影响
+
+### 进程流量钻取（v1.10.0 新增）
+- **双击柱子驱进程** — 日视图/周视图的任意柱子可双击，弹出该时段（小时/天）的进程流量明细表
+- **排序支持** — 按下载或上传高亮排序，对应柱形更醒目
+- **数据来源** — `process_traffic` 表按 (进程PID+启动时间+分钟) 去重累计，7 天保留
 
 ## 截图
 
@@ -103,53 +109,56 @@ swift test --sanitize=thread
 ## 架构
 
 ```
-Package.swift
+Sources/
 ├── NetMonitorCore/           — 纯数据层（无 SwiftUI）
-│   ├── NetworkMonitorEngine.swift   系统网速（IOReport + getifaddrs, 5s tick, EMA 平滑）
+│   ├── NetworkMonitorEngine.swift   系统网速（IOReport + getifaddrs, EMA 平滑）
 │   ├── SystemMonitor.swift          CPU/内存/GPU 采样（host_processor_info + IOAccelerator）
-│   ├── ThermalMonitor.swift         SMC 温度读取（IOConnectCallStructMethod, Intel+AS）
-│   ├── DatabaseManager.swift        SQLite 流量存储（15s 刷盘, os_log 错误日志）
-│   ├── AppSettings.swift            设置管理（@Published + UserDefaults + didSet）
-│   ├── SpeedFormatter.swift         格式化工具 + currentDateStamp
+│   ├── ThermalMonitor.swift         SMC 温度读取（Intel + Apple Silicon）
+│   ├── IOReportWrapper.swift        libIOReport.dylib 动态加载包装
+│   ├── ProcessMonitor.swift         进程 CPU/内存（proc_listallpids + proc_pidinfo）
+│   ├── ProcessNetworkReader.swift   nettop 后台常驻采集（进程级流量累计入库）
+│   ├── DatabaseManager.swift        SQLite 流量/进程数据存储
+│   ├── AppSettings.swift            设置管理（UserDefaults 持久化）
+│   ├── SpeedFormatter.swift         格式化工具
 │   ├── L10n.swift                   中英文国际化
 │   ├── ChartCalc.swift              图表计算辅助
 │   ├── VisibilityHelper.swift       进程可见性检测
-│   ├── ProcessNetworkReader.swift    nettop 子进程管理（进程级流量解析）
-│   ├── ProcessMonitor.swift          进程 CPU/内存/网络（proc_listallpids + nettop CSV）
-│   └── AppConstants.swift           常量定义（Bundle ID + OSLog subsystem）
+│   ├── AppConstants.swift           常量定义
+│   └── LogService.swift             日志服务
 │
 ├── NetMonitor/               — UI 层（SwiftUI + AppKit）
-│   ├── NetworkMonitorApp.swift      @main, AppDelegate, 窗口场景
-│   ├── MenuBarPopover.swift         弹出窗主体 + MiniSparkLine（CGContext crosshair）
-│   ├── StatusItemManager.swift      菜单栏图标 + MenuBarPanel + StatusBarView
-│   ├── SettingsView.swift           设置页（通用/流量统计/权限）+ a11y labels
-│   ├── AppSettings+UI.swift         AppSettings UI 扩展（菜单项标签/图标/绑定）
-│   ├── AppTheme.swift               颜色系统 + 卡片样式
-│   ├── ChartView.swift              CGContext 图表引擎 + hoverFingerprint
+│   ├── NetworkMonitorApp.swift      @main, 窗口场景
+│   ├── MenuBarPopover.swift         弹出窗主体 + MiniSparkLine
+│   ├── StatusItemManager.swift      菜单栏图标 + Panel
+│   ├── SettingsView.swift           设置页
+│   ├── AppSettings+UI.swift         设置 UI 扩展
+│   ├── AppTheme.swift               颜色系统
+│   ├── ChartView.swift              CGContext 图表引擎
+│   ├── BarChartView.swift           柱状图渲染（支持双击钻取）
+│   ├── TrafficStatsView.swift       流量统计页（日/周/年/进程钻取）
 │   ├── SystemChartView.swift        双系列折线图
 │   ├── FloatingWindowManager.swift  浮窗管理
 │   ├── GraphDetailView.swift        流量图表详情
 │   ├── SystemGraphDetailView.swift  系统资源图表详情
 │   ├── PopoverManager.swift         弹窗状态管理
 │   ├── AppState.swift               全局状态
-│   ├── BarChartView.swift           柱状图渲染
-│   ├── TrafficStatsView.swift       流量统计主视图
+│   ├── MiniSparkLine.swift          迷你折线图
 │   ├── ExportDataSheet.swift        导出数据弹窗
-│   ├── PermissionsView.swift        权限页（占位，待 TCC 接入）
+│   ├── PermissionsView.swift        权限页（占位）
 │   └── ThinScroller.swift           自定义滚动条
 │
-└── NetMonitorTests/          — 92 个单元测试
+└── NetMonitorTests/          — 92 个测试（Swift Testing 框架）
     ├── NetworkMonitorEngineTests.swift
     ├── SystemMonitorTests.swift
     ├── ThermalMonitorTests.swift
-    ├── DatabaseManagerTests.swift     — @Suite(.serialized), 内存 SQLite
+    ├── DatabaseManagerTests.swift
+    ├── ProcessMonitorTests.swift
     ├── GPUInfoTests.swift
     ├── SpeedFormatterTests.swift
     ├── ChartLogicTests.swift
     ├── VisibilityHelperTests.swift
     ├── L10nTests.swift
-    ├── AppSettingsTests.swift         — @Suite(.serialized), UUID UserDefaults suite
-    └── ProcessMonitorTests.swift
+    └── AppSettingsTests.swift
 ```
 
 ## 技术栈
@@ -174,20 +183,25 @@ Package.swift
 
 ## 更新记录
 
-### v1.11.0 (2026-07-14)
-- **修复**: COMMIT 错误不再静默丢弃，磁盘满时可记录
-- **修复**: 权限页改为显示实际运行时状态
-- **修复**: 数据库测试全部通过 (92/92)
-- **优化**: nettop 失败重试增加指数退避
-- **优化**: nettop 轮询间隔从 3s 延长到 5s
-- **CI**: release workflow 加入 DMG 打包 + GitHub Release
+### v1.10.0 (2026-07-14)
+- **新增**: 柱状图双击钻取 — 日/周视图双击柱子弹出该时段进程流量明细
+- **新增**: 后台进程流量追踪 — ProcessNetworkReader 持续运行 nettop 累计入库
+- **修复**: macOS Sequoia nettop 列名变更适配（bytes_in/bytes_out，无名进程列）
+- **修复**: nettop terminationHandler 竞态条件导致 15s 超时
+- **优化**: split(omittingEmptySubsequences:false) 适配 Sequoia CSV 空字段
+- **优化**: CI lint 清零（213→0 违规）
+- **版本**: 1.10.0 (build 10)，DMG 版本化命名
 
+### v1.9.0 (2026-07-09)
+- IOReport 推送式监控（Apple Silicon 回调式 CPU/网络，Intel 优雅降级）
+- 全局线程安全审计修复（14 Critical + 26 High）
+- 流量统计日/周/年视图、统一深色背景、菜单栏预览行
 
 ## 已知限制
 
 - 首次启动温度显示需要约 9 秒（SMC 轮询机制）
 - 部分虚拟网络接口（en5-en9）默认排除以避免重复计数，可在设置中自定义前缀
-- Sparkle 自动更新尚未集成（指南已准备，见 docs/sparkle-setup.md）
+- 无自动更新检查，需手动下载新版本
 
 ## Contributing
 
