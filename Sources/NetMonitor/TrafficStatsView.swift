@@ -57,7 +57,6 @@ struct TrafficStatsView: View {
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
     private let cfg = BarChartConfig.shared
 
-
     @State private var detailProcesses: [(name: String, down: UInt64, up: UInt64)] = []
     @State private var showDetailSheet = false
     @State private var detailLabel = ""
@@ -200,8 +199,6 @@ struct TrafficStatsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-
-
 
     // MARK: - Stats Bar
 

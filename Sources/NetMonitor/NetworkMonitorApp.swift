@@ -46,10 +46,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     self.appState.settingsTab = .general
                     NotificationCenter.default.post(name: Self.openSettingsNotification, object: nil)
                 }
-            }) { [weak self] in
+            }, onOpenSettings: { [weak self] in
             self?.appState.settingsTab = .general
             NotificationCenter.default.post(name: Self.openSettingsNotification, object: nil)
-        }
+        })
         floatingWindowManager?.update()
         ensureVisibility()
         NSApp.setActivationPolicy(settings.showDockIcon ? .regular : .accessory)

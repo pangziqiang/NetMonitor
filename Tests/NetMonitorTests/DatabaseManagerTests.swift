@@ -27,7 +27,7 @@ struct DatabaseManagerTests {
         #expect(after.down == 0)
         #expect(after.up == 0)
         let daily = db.dailyTraffic(days: 7)
-        #expect(daily.count == 0)
+        #expect(daily.isEmpty)
     }
 
     @Test func databaseManagerDailyTraffic() throws {
@@ -43,7 +43,7 @@ struct DatabaseManagerTests {
     @Test func databaseManagerMinutelyTraffic() throws {
         let db = try DatabaseManager(path: ":memory:")
         let minutely = db.minutelyTraffic(minutes: 60)
-        #expect(minutely.count == 0)
+        #expect(minutely.isEmpty)
     }
 
     @Test func databaseErrorDescriptions() {

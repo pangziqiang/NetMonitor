@@ -174,11 +174,10 @@ final class ProcessNetworkReader {
         let key = "\(pid)|\(name)|\(startTime)"
 
         accumLock.lock()
-        if accumulators[key] == nil {
-            accumulators[key] = Accumulator(lastFlushMinute: currentMinuteString())
-        }
-        accumulators[key]!.totalDown += downVal
-        accumulators[key]!.totalUp += upVal
+        var acc = accumulators[key] ?? Accumulator(lastFlushMinute: currentMinuteString())
+        acc.totalDown += downVal
+        acc.totalUp += upVal
+        accumulators[key] = acc
         accumLock.unlock()
     }
 

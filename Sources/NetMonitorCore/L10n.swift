@@ -192,6 +192,6 @@ public enum L10n {
         "This Month": "本月",
         "All Data": "全部数据",
         "Day": "日",
-        "Year": "年",
+        "Year": "年"
     ]
 }

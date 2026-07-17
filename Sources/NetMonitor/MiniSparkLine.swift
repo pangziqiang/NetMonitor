@@ -7,10 +7,10 @@ struct MiniSparkLine: View {
     let color: Color
     var showAxis: Bool = false
     var showPeak: Bool = false
-    var fixedMax: Double? = nil
-    var formatValue: ((Double) -> String)? = nil
-    @State private var hoverX: CGFloat? = nil
-    @State private var hoverSize: CGSize? = nil
+    var fixedMax: Double?
+    var formatValue: ((Double) -> String)?
+    @State private var hoverX: CGFloat?
+    @State private var hoverSize: CGSize?
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()

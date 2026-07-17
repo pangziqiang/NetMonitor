@@ -70,7 +70,7 @@ class StatusItemManager: NSObject {
             hostingView.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 4),
             hostingView.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -4),
             hostingView.topAnchor.constraint(equalTo: button.topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: button.bottomAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: button.bottomAnchor)
         ])
 
         // Support both left and right click on menu bar
@@ -257,4 +257,3 @@ struct StatusBarView: View {
         .fixedSize()
     }
 }
-

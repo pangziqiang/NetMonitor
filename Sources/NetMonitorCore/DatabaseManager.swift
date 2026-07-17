@@ -51,7 +51,7 @@ public class DatabaseManager {
 
     private var pendingPeakDown: Double = 0
     private var pendingPeakUp: Double = 0
-    private var pendingProcesses: String? = nil
+    private var pendingProcesses: String?
     private let peakLock = NSLock()
 
     private var hasPendingFlush = false
@@ -471,7 +471,7 @@ public class DatabaseManager {
             }
             _stmtCached = true
         }
-        let stmt = stmtInsertMinutely!
+        guard let stmt = stmtInsertMinutely else { return }
         sqlite3_reset(stmt)
         sqlite3_clear_bindings(stmt)
         sqlite3_bind_text(stmt, 1, ts, -1, SQLITE_TRANSIENT)
@@ -1065,6 +1065,7 @@ public class DatabaseManager {
             sqlite3_bind_text(stmt, 1, startStr, -1, SQLITE_TRANSIENT)
             var result: [HourlyRecord] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
+                // swiftlint:disable:next force_unwrapping
                 if let record = Self._parseHourlyRecord(stmt: stmt!) { result.append(record) }
             }
             return result
@@ -1084,6 +1085,7 @@ public class DatabaseManager {
             sqlite3_bind_text(stmt, 2, toStr, -1, SQLITE_TRANSIENT)
             var result: [HourlyRecord] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
+                // swiftlint:disable:next force_unwrapping
                 if let record = Self._parseHourlyRecord(stmt: stmt!) { result.append(record) }
             }
             return result

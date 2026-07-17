@@ -16,8 +16,8 @@ struct DualSeriesChart: View {
     let series2: SeriesConfig?
     var showCard: Bool = true
     @Environment(\.colorScheme) var colorScheme
-    @State private var hoverX: CGFloat? = nil
-    @State private var hoverSize: CGSize? = nil
+    @State private var hoverX: CGFloat?
+    @State private var hoverSize: CGSize?
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
 
     var body: some View {

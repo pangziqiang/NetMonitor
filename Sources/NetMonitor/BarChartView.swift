@@ -237,7 +237,7 @@ struct BarChartRenderer: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             // Transparent button overlay for reliable click detection on macOS
-            GeometryReader { geo in
+            GeometryReader { _ in
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) { location in
@@ -257,11 +257,11 @@ struct BarChartRenderer: View {
                 }
             )
     }
-
+    
     private func l1Safe(_ i: Int) -> String {
         i < self.labels1.count ? self.labels1[i] : ""
     }
-
+    
     private func l2Safe(_ i: Int) -> String {
         i < self.labels2.count ? self.labels2[i] : ""
     }

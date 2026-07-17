@@ -78,7 +78,7 @@ private final class IOReportNetMonitor {
 private final class NetMonitorState {
     var lastBytesIn: UInt64 = 0
     var lastBytesOut: UInt64 = 0
-    var lastTimestamp: Date? = nil
+    var lastTimestamp: Date?
 }
 
 // MARK: - NetMonitorEngine

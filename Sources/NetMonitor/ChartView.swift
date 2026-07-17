@@ -39,8 +39,8 @@ final class ChartHostView: NSView {
 
 struct ChartView: NSViewRepresentable {
     let renderer: (CGContext, CGSize, Bool) -> Void
-    var hoverX: Binding<CGFloat?>? = nil
-    var hoverSize: Binding<CGSize?>? = nil
+    var hoverX: Binding<CGFloat?>?
+    var hoverSize: Binding<CGSize?>?
     var dataFingerprint: Int = 0
     var hoverFingerprint: Int = -1
 
@@ -121,10 +121,7 @@ func niceYAxisLabels(maxVal: Double) -> [Double] {
     let magnitude = pow(10, floor(log10(maxVal)))
     let normalized = maxVal / magnitude
     let niceMax: Double
-    if normalized <= 1 { niceMax = 1 }
-    else if normalized <= 2 { niceMax = 2 }
-    else if normalized <= 5 { niceMax = 5 }
-    else { niceMax = 10 }
+    if normalized <= 1 { niceMax = 1 } else if normalized <= 2 { niceMax = 2 } else if normalized <= 5 { niceMax = 5 } else { niceMax = 10 }
     let rounded = niceMax * magnitude
     return [rounded * 0.25, rounded * 0.5, rounded * 0.75, rounded]
 }

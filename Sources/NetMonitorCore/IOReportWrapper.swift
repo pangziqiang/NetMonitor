@@ -64,6 +64,7 @@ private final class IOReportLib {
 }
 
 // C-compatible channel type (matching kernel header)
+// swiftlint:disable:next type_name
 private struct C_IOReportChannelType {
     var report_format: UInt8 = 0
     var reserved: UInt8 = 0
@@ -132,8 +133,13 @@ public final class IOReportMonitor {
             // Get driver name
             var driverNamePtr: UnsafeMutablePointer<CChar>?
             let krDriver = lib.copyDriverName(ch, &driverNamePtr)
-            let driver = (krDriver == 0 && driverNamePtr != nil) ? String(cString: driverNamePtr!) : "unknown"
-            if driverNamePtr != nil { free(driverNamePtr) }
+            let driver: String
+            if krDriver == 0, let ptr = driverNamePtr {
+                driver = String(cString: ptr)
+                free(ptr)
+            } else {
+                driver = "unknown"
+            }
 
             // Get channel description
             var cType = C_IOReportChannelType()
@@ -177,7 +183,8 @@ public final class IOReportMonitor {
         // Create subscription — the subscription retains channel objects
         subscription = 0
         let krSub = validChannels.withUnsafeBufferPointer { ptr in
-            lib.createSubscription(ptr.baseAddress!, UInt32(ptr.count), 0, &subscription)
+            guard let baseAddr = ptr.baseAddress else { return Int32(1) }
+            return lib.createSubscription(baseAddr, UInt32(ptr.count), 0, &subscription)
         }
         guard krSub == 0, subscription != 0 else { return false }
 

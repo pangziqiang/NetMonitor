@@ -4,6 +4,8 @@ disabled_rules:
   - function_body_length
   - type_body_length
   - file_length
+  - large_tuple
+  - identifier_name
 
 opt_in_rules:
   - empty_count
@@ -13,10 +15,15 @@ opt_in_rules:
   - private_outlet
   - redundant_nil_coalescing
 
+analyzer_rules:
+  - unused_import
+
 excluded:
   - .build
   - .swiftpm
   - Package.swift
+  - IOReportNetworkDemo.swift
+  - Tests
 
 line_length:
   warning: 120
@@ -34,10 +41,6 @@ file_length:
   warning: 500
   error: 1000
 
-identifier_name:
-  min_length:
-    warning: 2
-    error: 1
-  max_length:
-    warning: 60
-    error: 80
+cyclomatic_complexity:
+  warning: 25
+  error: 30

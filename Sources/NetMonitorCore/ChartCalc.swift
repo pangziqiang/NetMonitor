@@ -23,11 +23,7 @@ public func speedChartMax(peak: Double) -> Double {
     if peak <= kb500 { return kb500 }
     let mb = peak / mb1
     let niceMax: Double
-    if mb <= 1 { niceMax = 1 }
-    else if mb <= 2 { niceMax = 2 }
-    else if mb <= 5 { niceMax = 5 }
-    else if mb <= 10 { niceMax = 10 }
-    else { niceMax = ceil(mb / 10) * 10 }
+    if mb <= 1 { niceMax = 1 } else if mb <= 2 { niceMax = 2 } else if mb <= 5 { niceMax = 5 } else if mb <= 10 { niceMax = 10 } else { niceMax = ceil(mb / 10) * 10 }
     return niceMax * mb1
 }
 

@@ -2,8 +2,8 @@ import Foundation
 import Combine
 
 public enum FloatDoubleClickAction: String, CaseIterable, Identifiable {
-    case settings = "settings"
-    case trafficStats = "trafficStats"
+    case settings
+    case trafficStats
     public var id: String { rawValue }
 }
 
