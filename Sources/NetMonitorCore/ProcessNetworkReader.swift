@@ -65,8 +65,6 @@ final class ProcessNetworkReader {
         task?.terminate()
     }
 
-    func tick() {}
-
     // MARK: - Continuous reader
 
     private func runReader() {
