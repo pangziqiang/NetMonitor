@@ -211,6 +211,12 @@ public class DatabaseManager {
             try exec("DELETE FROM process_traffic")
             UserDefaults.standard.set(true, forKey: cleanupKey)
         }
+        // One-time cleanup: remove corrupted traffic_daily rows (binary garbage dates)
+        let dailyCleanupKey = "traffic_daily_cleanup_v1"
+        if !UserDefaults.standard.bool(forKey: dailyCleanupKey) {
+            try exec("DELETE FROM traffic_daily WHERE date NOT GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'")
+            UserDefaults.standard.set(true, forKey: dailyCleanupKey)
+        }
         try migrateMinutelyColumns()
         try migrateHourlyPeakTimeColumns()
         // backfillHourlyData deferred to first query (lazy)

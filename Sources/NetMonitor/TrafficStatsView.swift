@@ -576,15 +576,12 @@ struct TrafficStatsView: View {
             dataByDate[row.date] = (row.totalDown, row.totalUp)
         }
 
-        let sortedDates = dataByDate.keys.sorted()
-        guard let earliestStr = sortedDates.first,
-              let earliestDate = iso8601Date(from: earliestStr + "T00:00:00.000Z") else {
-            page = nil; return
-        }
-
-        let weekday = cal.component(.weekday, from: earliestDate)
-        let daysBackToMonday = (weekday + 5) % 7
-        guard let mondayDate = cal.date(byAdding: .day, value: -daysBackToMonday, to: earliestDate) else {
+        // 锚定最近 24 天（到今天），与年视图"锚定当前"保持一致。
+        // 之前锚定"最早数据所在周的周一"，数据积累后窗口永不前进，页面变成死数据。
+        let now = Date()
+        let todayComp = cal.dateComponents([.year, .month, .day], from: now)
+        guard let today = cal.date(from: todayComp),
+              let startDate = cal.date(byAdding: .day, value: -23, to: today) else {
             page = nil; return
         }
 
@@ -593,7 +590,7 @@ struct TrafficStatsView: View {
         var dates = [String](), hasDataArr = [Bool]()
 
         for i in 0..<24 {
-            guard let d = cal.date(byAdding: .day, value: i, to: mondayDate) else { continue }
+            guard let d = cal.date(byAdding: .day, value: i, to: startDate) else { continue }
             let dateStr = currentDateStamp(from: d)
             let wd = cal.component(.weekday, from: d)
             let isTodayBucket = (dateStr == todayStr)
