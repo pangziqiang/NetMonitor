@@ -11,8 +11,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let settings = AppSettings.shared
     var statusItemManager: StatusItemManager?
     var floatingWindowManager: FloatingWindowManager?
-    static let openSettingsNotification = Notification.Name("OpenSettingsWindow")
-    static let openTrafficStatsNotification = Notification.Name("OpenTrafficStatsWindow")
     private var settingsWindow: NSWindow?
     private var settingsWindowObserver: NSObjectProtocol?
     private static let settingsWindowLevel = NSWindow.Level(rawValue: 102)
@@ -41,15 +39,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             onDoubleClick: { [weak self] in
                 guard let self else { return }
                 if self.settings.floatDoubleClickAction == .trafficStats {
-                    NotificationCenter.default.post(name: Self.openTrafficStatsNotification, object: nil)
+                    WindowRouter.shared.open(id: "trafficStats")
+                    NSApp.activate()
                 } else {
                     self.appState.settingsTab = .general
-                    NotificationCenter.default.post(name: Self.openSettingsNotification, object: nil)
+                    WindowRouter.shared.open(id: "settings")
+                    NSApp.activate()
                 }
             }, onOpenSettings: { [weak self] in
-            self?.appState.settingsTab = .general
-            NotificationCenter.default.post(name: Self.openSettingsNotification, object: nil)
-        })
+                self?.appState.settingsTab = .general
+                WindowRouter.shared.open(id: "settings")
+                NSApp.activate()
+            })
         floatingWindowManager?.update()
         ensureVisibility()
         NSApp.setActivationPolicy(settings.showDockIcon ? .regular : .accessory)
@@ -113,14 +114,7 @@ struct NetMonitorApp: App {
                     appDelegate.engine.historyMax = n
                     appDelegate.system.historyMax = n
                 }
-                .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openSettingsNotification)) { _ in
-                    openWindow(id: "settings")
-                    NSApp.activate()
-                }
-                .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openTrafficStatsNotification)) { _ in
-                    openWindow(id: "trafficStats")
-                    NSApp.activate()
-                }
+                .onAppear { WindowRouter.shared.register(openWindow) }
         }
         .defaultSize(width: 400, height: 600)
         .windowResizability(.contentSize)
@@ -198,6 +192,7 @@ struct NetMonitorApp: App {
                 .environmentObject(appDelegate.appState)
                 .environmentObject(appDelegate.settings)
                 .frame(width: 1320)
+                .onAppear { WindowRouter.shared.register(openWindow) }
         }
         .defaultSize(width: 1320, height: 600)
         .windowResizability(.contentSize)

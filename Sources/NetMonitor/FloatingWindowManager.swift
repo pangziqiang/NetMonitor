@@ -219,6 +219,7 @@ private class FloatingWindowView: NSView {
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 {
             onDoubleClick?()
+            return
         }
         super.mouseDown(with: event)
     }
