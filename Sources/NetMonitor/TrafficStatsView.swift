@@ -70,12 +70,10 @@ struct TrafficStatsView: View {
             refreshTimer?.invalidate()
             refreshTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
                 DatabaseManager.shared?.flushPendingTrafficSyncIfNeeded()
-                syncSelectedDateOnTimer()
                 loadData()
             }
             DatabaseManager.shared?.flushPendingTrafficSyncIfNeeded()
             loadAvailableDates()
-            syncSelectedDateToToday()
             loadData()
         }
         .onDisappear {
@@ -440,35 +438,6 @@ struct TrafficStatsView: View {
         }
         if selectedDateStr.isEmpty || !availableDateStrs.contains(selectedDateStr) {
             selectedDateStr = todayStr
-        }
-    }
-
-    // MARK: - Day Change Handling
-
-    private func syncSelectedDateToToday() {
-        guard timeRange == .hour else { return }
-        let comp = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-        guard let year = comp.year, let month = comp.month, let day = comp.day else { return }
-        let todayStr = String(format: "%04d-%02d-%02d", year, month, day)
-        if selectedDateStr != todayStr {
-            selectedDateStr = todayStr
-            todayBaseLoaded = false
-        }
-    }
-
-    private func syncSelectedDateOnTimer() {
-        guard timeRange == .hour else { return }
-        let comp = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-        guard let year = comp.year, let month = comp.month, let day = comp.day else { return }
-        let todayStr = String(format: "%04d-%02d-%02d", year, month, day)
-        guard selectedDateStr != todayStr else { return }
-        guard let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Calendar.current.startOfDay(for: Date())) else { return }
-        let yComp = Calendar.current.dateComponents([.year, .month, .day], from: yesterday)
-        guard let yy = yComp.year, let ym = yComp.month, let yd = yComp.day else { return }
-        let yesterdayStr = String(format: "%04d-%02d-%02d", yy, ym, yd)
-        if selectedDateStr == yesterdayStr {
-            selectedDateStr = todayStr
-            todayBaseLoaded = false
         }
     }
 
