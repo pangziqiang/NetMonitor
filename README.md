@@ -181,6 +181,13 @@ Sources/
 
 所有数据只读，不修改系统设置，不上传任何数据。
 
+## 开发流程（Git 工作流）
+
+- **分支**：`main` 始终保持可发布状态。新功能或修复先在功能分支开发，命名 `codex/xxx`（如 `codex/fix-day-view`），完成后合并回 `main`；小改动也可以直接提交到 `main`。
+- **提交信息**：使用 Conventional Commits（`feat:` / `fix:` / `refactor:` / `docs:` / `chore:` / `test:`），一个提交只做一件事，方便回溯。
+- **发布标签**：发版时打带日期时间的 tag，格式 `v<VERSION>-<YYYYMMDD>-<HHMMSS>`（如 `v1.11.0-20260714-012700`），并推送 `git push --tags`。
+- **发布产物**：`scripts/create-dmg.sh` 生成 `NetMonitor-<VERSION>.dmg`，上传到 GitHub Release。
+
 ## 更新记录
 
 ### v1.10.0 (2026-07-14)
