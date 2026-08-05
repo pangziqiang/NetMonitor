@@ -114,12 +114,12 @@ class StatusItemManager: NSObject {
             }
 
         // Close panel when clicking outside (unless pinned)
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak panel] _ in
-            guard let panel else { return }
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self, weak panel] _ in
+            guard let panel, let self else { return }
             DispatchQueue.main.async {
                 guard panel.isVisible else { return }
                 guard !PopoverManager.shared.isPinned else { return }
-                panel.orderOut(nil)
+                self.hidePopover(panel)
             }
         }
     }
@@ -127,7 +127,7 @@ class StatusItemManager: NSObject {
     @objc func togglePopover(_ sender: Any?) {
         guard let button = statusItem?.button, let panel = popoverWindow else { return }
         if panel.isVisible {
-            panel.orderOut(nil)
+            hidePopover(panel)
         } else {
             let buttonRect = button.convert(button.bounds, to: nil)
             guard let screenRect = button.window?.convertToScreen(buttonRect) else { return }
@@ -141,6 +141,14 @@ class StatusItemManager: NSObject {
             panel.makeKeyAndOrderFront(nil)
             NSApp.activate()
         }
+    }
+
+    /// 隐藏 popover 并停掉进程监控。
+    /// `orderOut` 不会触发 SwiftUI 的 onDisappear，必须手动把 isActive 置回 false，
+    /// 否则 ProcessMonitor 每 5 秒全量扫描 + nettop 采样会一直空转。
+    private func hidePopover(_ panel: NSWindow) {
+        panel.orderOut(nil)
+        system.processMonitor.isActive = false
     }
 
     private func measureContentHeight() -> CGFloat {
@@ -158,6 +166,7 @@ class StatusItemManager: NSObject {
         resizeCancellable?.cancel()
         resizeCancellable = nil
         popoverWindow?.orderOut(nil)
+        system.processMonitor.isActive = false
     }
 
     deinit {

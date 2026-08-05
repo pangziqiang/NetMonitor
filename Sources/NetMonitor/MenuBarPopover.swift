@@ -101,6 +101,7 @@ struct MenuBarPopover: View {
     private var closeButton: some View {
         Button {
             PopoverManager.shared.panel?.orderOut(nil)
+            system.processMonitor.isActive = false
         } label: {
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 16))

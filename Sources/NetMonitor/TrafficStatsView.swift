@@ -57,6 +57,8 @@ struct TrafficStatsView: View {
     /// Day view (24 days) pager: 0 = ends today, +1 = one 24-day window back
     @State private var dayPageOffset = 0
     @State private var dayMaxOffset = 0
+    /// 页面数据指纹：数据未变化时跳过整页重建/重绘（避免 3 秒定时器空转）
+    @State private var lastPageFingerprint = -1
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -70,7 +72,7 @@ struct TrafficStatsView: View {
             refreshTimer?.invalidate()
             refreshTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
                 DatabaseManager.shared?.flushPendingTrafficSyncIfNeeded()
-                loadData()
+                refreshLiveData()
             }
             DatabaseManager.shared?.flushPendingTrafficSyncIfNeeded()
             loadAvailableDates()
@@ -443,6 +445,21 @@ struct TrafficStatsView: View {
 
     // MARK: - Data Loading
 
+    /// 3 秒定时刷新：只有当前可见数据会变化时才重载。
+    /// 历史视图（过去的某天、翻页回看的日窗口）数据是静态的，跳过可省掉
+    /// 每 3 秒一次的 DB 查询与整页重绘。
+    private func refreshLiveData() {
+        let todayStr = currentDateStamp()
+        switch timeRange {
+        case .hour:
+            if selectedDateStr.isEmpty || selectedDateStr == todayStr { loadData() }
+        case .day:
+            if dayPageOffset == 0 { loadData() }
+        case .month:
+            loadData()
+        }
+    }
+
     private func loadData() {
         let db = DatabaseManager.shared
         guard let db else { page = nil; return }
@@ -581,13 +598,13 @@ struct TrafficStatsView: View {
         let a1 = Double(s1) / Double(hoursElapsed * 3600)
         let a2 = Double(s2) / Double(hoursElapsed * 3600)
         let futureHour = isToday ? nowLocal : 99
-        page = BarChartPage(
+        publishPage(BarChartPage(
             dn: dn, up: up, l1: l1, l2: l2,
             fut: { $0 > futureHour },
             hasData: { idx in idx < hasData.count && hasData[idx] },
             title: L10n.tr("Hour"),
             s1: s1, s2: s2, a1: a1, a2: a2
-        )
+        ), dn: dn, up: up, window: l2)
     }
 
     // MARK: - Week (从最早数据所在周的周一开始，24天)
@@ -649,13 +666,13 @@ struct TrafficStatsView: View {
         let s1 = dn.reduce(0, +), s2 = up.reduce(0, +)
         let totalSec = Double(24 * 86400)
 
-        page = BarChartPage(
+        publishPage(BarChartPage(
             dn: dn, up: up, l1: l1, l2: l2,
             fut: { idx in idx < dates.count && dates[idx] > todayStr },
             hasData: { idx in idx < hasDataArr.count && hasDataArr[idx] },
             title: L10n.tr("Day"),
             s1: s1, s2: s2, a1: Double(s1) / totalSec, a2: Double(s2) / totalSec
-        )
+        ), dn: dn, up: up, window: dates)
     }
 
     // MARK: - Year (从最早数据所在月开始，24个月)
@@ -710,12 +727,24 @@ struct TrafficStatsView: View {
         let totalSec = Double(24 * 30 * 86400)
         let currentMonthKey = String(iso8601String(from: now).prefix(7))
 
-        page = BarChartPage(
+        publishPage(BarChartPage(
             dn: dn, up: up, l1: l1, l2: l2,
             fut: { idx in idx < months.count && months[idx].key > currentMonthKey },
             hasData: { idx in idx < hasDataArr.count && hasDataArr[idx] },
             title: L10n.tr("Month"),
             s1: s1, s2: s2, a1: Double(s1) / totalSec, a2: Double(s2) / totalSec
-        )
+        ), dn: dn, up: up, window: months.map { $0.key })
+    }
+
+    /// 只有页面数据真正变化时才重建/重绘图表；数据未变（如空闲）时跳过，
+    /// 避免 3 秒定时器每轮都触发整页 SwiftUI 重算与 CG 重绘。
+    private func publishPage(_ newPage: BarChartPage, dn: [UInt64], up: [UInt64], window: [String]) {
+        var fp = window.joined().hashValue
+        for v in dn { fp = fp &* 31 &+ Int(v) }
+        for v in up { fp = fp &* 31 &+ Int(v) }
+        if fp != lastPageFingerprint {
+            page = newPage
+            lastPageFingerprint = fp
+        }
     }
 }
