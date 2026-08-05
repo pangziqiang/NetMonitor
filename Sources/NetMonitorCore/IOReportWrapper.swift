@@ -199,7 +199,6 @@ public final class IOReportMonitor {
             }
         }
         free(channels)
-        guard krSub == 0, subscription != 0 else { return false }
 
         self.channels = validChannels
 
