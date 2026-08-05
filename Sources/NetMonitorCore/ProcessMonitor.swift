@@ -177,6 +177,9 @@ public class ProcessMonitor: ObservableObject {
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
+        // Readable stdin (not /dev/null) keeps nettop's -s pacing; with
+        // /dev/null stdin it samples at full speed (~120% of one core).
+        task.standardInput = Pipe()
 
         let semaphore = DispatchSemaphore(value: 0)
         var timedOut = false

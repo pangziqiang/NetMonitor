@@ -1,9 +1,12 @@
 import Foundation
 import os.log
 
-/// Per-process network traffic reader using continuous nettop (high precision mode).
-/// Runs nettop continuously, parses output, and flushes per-process data every 60 seconds.
-/// CPU cost: ~130% (nettop is a full-speed network sampler).
+/// Per-process network traffic reader using a continuous nettop in logging mode.
+///
+/// nettop stays alive with `-L 0` and samples incrementally every `-s` seconds,
+/// which is far cheaper than the previous `-L 2` burst+restart loop: each fresh
+/// launch re-enumerates every socket (~1.2s of CPU), while incremental samples
+/// cost only ~0.05-0.1s each. Measured on Intel (12 cores): ~0.7% of one core.
 final class ProcessNetworkReader {
     static let shared = ProcessNetworkReader()
 
@@ -74,8 +77,12 @@ final class ProcessNetworkReader {
         accumLock.unlock()
         let task = Process()
         task.launchPath = "/usr/bin/nettop"
-        // -P: packet/process view, -L 2: 2 samples per burst, -s 1: 1s interval
-        task.arguments = ["-P", "-L", "2", "-n"]
+        // -P: per-process view; -L 0: logging mode, 0 = infinite samples (never exits);
+        // -s 2: sample every 2 seconds (keeps nettop state, cheap incremental updates)
+        task.arguments = ["-P", "-L", "0", "-n", "-s", "2"]
+        // Give nettop a readable stdin (not /dev/null): with /dev/null stdin it
+        // ignores -s and samples at full speed (~120% of one core).
+        task.standardInput = Pipe()
         task.standardError = FileHandle.nullDevice
 
         let pipe = Pipe()
@@ -99,7 +106,7 @@ final class ProcessNetworkReader {
 
         self.task = task
         retryCount = 0  // successful launch resets retry count
-        os_log("nettop reader started (continuous, high precision)", log: .default, type: .info)
+        os_log("nettop reader started (continuous, -s 2)", log: .default, type: .info)
 
         let reader = pipe.fileHandleForReading
         var buffer = Data()
