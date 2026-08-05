@@ -11,7 +11,7 @@
       <sparkle:version>11</sparkle:version>
       <sparkle:shortVersionString>1.11.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <enclosure url="https://github.com/pangziqiang/NetMonitor/releases/download/v1.11.1/NetMonitor-1.11.1.dmg" sparkle:edSignature="4NUy59P4JeCruPtTSHox/IA+JZrZnpvZ3zl2HtO/0LGsr0PzDXCey8Z+X1vEc2DVbRyd7mQ5yqqOWZIoeo9SBg==" length="2348366"/>
+      <enclosure url="https://github.com/pangziqiang/NetMonitor/releases/download/v1.11.1/NetMonitor-1.11.1.dmg" sparkle:edSignature="lIHIQbNBYg6U/VJP4kxl9yfKZfaabLONU72rcz7SKqRZFnjpD9jsVLsYW+EYqg094RRbs87WhVMqalZK7H0NDw==" length="3196538"/>
     </item>
   </channel>
 </rss>
