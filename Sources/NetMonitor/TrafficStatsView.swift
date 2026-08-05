@@ -56,6 +56,8 @@ struct TrafficStatsView: View {
 
     /// Day view (24 days) window end date (YYYY-MM-DD); empty = today
     @State private var dayWindowEndStr = ""
+    /// 日视图箭头步进：选"时间段"=24（整窗口翻页），选"单日结束日期"=1（滚动条逐日滑动）
+    @State private var dayArrowStep = 24
     /// 页面数据指纹：数据未变化时跳过整页重建/重绘（避免 3 秒定时器空转）
     @State private var lastPageFingerprint = -1
     /// 自定义日期下拉面板（替代系统 Picker 菜单，避免选中早期日期时菜单向上弹出被遮挡）
@@ -235,7 +237,7 @@ struct TrafficStatsView: View {
     private var dayRangeControl: some View {
         HStack(spacing: 6) {
             stepButton(systemImage: "chevron.left", enabled: dayCanGoEarlier) {
-                shiftDayWindow(-24)
+                shiftDayWindow(-dayArrowStep)
             }
 
             Button {
@@ -263,6 +265,7 @@ struct TrafficStatsView: View {
                 dropdownPanel {
                     ForEach(dayWindowOptions, id: \.end) { opt in
                         pickerRow(label: opt.label, value: opt.end, selected: dayEndDate) {
+                            dayArrowStep = 24
                             dayWindowEndStr = opt.end
                             showDateDropdown = false
                         }
@@ -270,6 +273,7 @@ struct TrafficStatsView: View {
                     Divider().padding(.vertical, 4)
                     ForEach(daySingleDates, id: \.self) { dateStr in
                         pickerRow(label: formatDateStr(dateStr), value: dateStr, selected: dayEndDate) {
+                            dayArrowStep = 1
                             dayWindowEndStr = dateStr
                             showDateDropdown = false
                         }
@@ -278,7 +282,7 @@ struct TrafficStatsView: View {
             }
 
             stepButton(systemImage: "chevron.right", enabled: dayCanGoLater) {
-                shiftDayWindow(+24)
+                shiftDayWindow(+dayArrowStep)
             }
         }
     }
@@ -329,7 +333,7 @@ struct TrafficStatsView: View {
     private var dayCanGoEarlier: Bool {
         guard let earliest = availableDateStrs.last,
               let end = iso8601Date(from: dayEndDate + "T00:00:00.000Z"),
-              let back = Calendar.current.date(byAdding: .day, value: -24, to: end) else { return false }
+              let back = Calendar.current.date(byAdding: .day, value: -dayArrowStep, to: end) else { return false }
         return currentDateStamp(from: back) >= earliest
     }
 
