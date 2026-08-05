@@ -1462,11 +1462,3 @@ private let _cachedISO8601Formatter: ISO8601DateFormatter = {
     f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return f
 }()
-
-private func iso8601String(from date: Date) -> String {
-    return _cachedISO8601Formatter.string(from: date)
-}
-
-internal func iso8601Date(from string: String) -> Date? {
-        return _cachedISO8601Formatter.date(from: string)
-    }

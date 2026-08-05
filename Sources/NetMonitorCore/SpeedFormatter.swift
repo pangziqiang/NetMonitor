@@ -120,3 +120,24 @@ public func safeFilenameDate() -> String {
     defer { dateFormatterLock.unlock() }
     return _safeFilenameDateFormatter.string(from: Date())
 }
+
+// MARK: - ISO8601 Helpers
+
+private let _iso8601Lock = NSLock()
+private let _iso8601Formatter: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+
+public func iso8601String(from date: Date) -> String {
+    _iso8601Lock.lock()
+    defer { _iso8601Lock.unlock() }
+    return _iso8601Formatter.string(from: date)
+}
+
+public func iso8601Date(from string: String) -> Date? {
+    _iso8601Lock.lock()
+    defer { _iso8601Lock.unlock() }
+    return _iso8601Formatter.date(from: string)
+}

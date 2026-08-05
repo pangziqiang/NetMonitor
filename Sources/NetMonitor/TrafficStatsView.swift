@@ -2,19 +2,6 @@ import NetMonitorCore
 import SwiftUI
 import AppKit
 
-// Thread-safe ISO8601 helpers
-private func iso8601String(from date: Date) -> String {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return f.string(from: date)
-}
-
-private func iso8601Date(from string: String) -> Date? {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return f.date(from: string)
-}
-
 // MARK: - Time Range
 
 enum TrafficTimeRange: String, CaseIterable {
@@ -229,14 +216,7 @@ struct TrafficStatsView: View {
         }
     }
 
-    private func iso8601MinuteString(from date: Date) -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let str = f.string(from: date)
-        return String(str.prefix(16)) + ":00.000Z"
-    }
-
-// MARK: - Chart Section
+    // MARK: - Chart Section
 
     private func chartSection(data: [UInt64], color: Color, page: BarChartPage) -> some View {
         BarChartRenderer(

@@ -7,12 +7,6 @@ public enum LogCategory: String {
     case error
 }
 
-private func iso8601String(from date: Date) -> String {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return f.string(from: date)
-}
-
 public enum LogService {
     private static let log = OSLog(subsystem: AppConstants.logSubsystem, category: "app")
 
