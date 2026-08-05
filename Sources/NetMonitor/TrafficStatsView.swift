@@ -217,17 +217,12 @@ struct TrafficStatsView: View {
             }
 
             Picker("", selection: $dayWindowEndStr) {
-                ForEach(availableDateStrs, id: \.self) { dateStr in
-                    Text(formatDateStr(dateStr)).tag(dateStr)
+                ForEach(dayWindowOptions, id: \.end) { opt in
+                    Text(opt.label).tag(opt.end)
                 }
             }
             .pickerStyle(.menu)
-            .frame(width: 140)
-
-            Text(dayRangeLabel)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(theme.textSecondary)
-                .frame(minWidth: 92)
+            .frame(width: 170)
 
             stepButton(systemImage: "chevron.right", enabled: dayCanGoLater) {
                 shiftDayWindow(+24)
@@ -276,11 +271,31 @@ struct TrafficStatsView: View {
         .disabled(!enabled)
     }
 
-    private var dayRangeLabel: String {
-        guard dayDates.count == 24, let first = dayDates.first, let last = dayDates.last else { return "" }
-        let f = first.split(separator: "-"), l = last.split(separator: "-")
-        guard f.count == 3, l.count == 3 else { return "" }
-        return "\(f[1])/\(f[2]) ~ \(l[1])/\(l[2])"
+    /// 日视图下拉项：按 24 天对齐的窗口列表（07/14 ~ 08/06、06/20 ~ 07/13 …），
+    /// 与 ◀▶ 翻页完全一致；窗口终点 = 今天 - n*24。
+    private var dayWindowOptions: [(label: String, end: String)] {
+        let cal = Calendar.current
+        let todayStr = currentDateStamp()
+        guard let today = iso8601Date(from: todayStr + "T00:00:00.000Z") else { return [] }
+        var options: [(String, String)] = []
+        var n = 0
+        while true {
+            guard let end = cal.date(byAdding: .day, value: -n * 24, to: today),
+                  let start = cal.date(byAdding: .day, value: -23, to: end) else { break }
+            let endStr = currentDateStamp(from: end)
+            if let earliest = availableDateStrs.last, endStr < earliest { break }
+            options.append((label: dayRangeText(start: start, end: end), end: endStr))
+            n += 1
+        }
+        return options
+    }
+
+    private func dayRangeText(start: Date, end: Date) -> String {
+        let f = { (d: Date) -> String in
+            let c = Calendar.current.dateComponents([.month, .day], from: d)
+            return String(format: "%02d/%02d", c.month ?? 0, c.day ?? 0)
+        }
+        return "\(f(start)) ~ \(f(end))"
     }
 
     // MARK: - Scroll Content
