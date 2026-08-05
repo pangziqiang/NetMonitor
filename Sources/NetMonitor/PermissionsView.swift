@@ -1,5 +1,6 @@
 import NetMonitorCore
 import SwiftUI
+import AppKit
 
 struct PermissionsView: View {
     @State private var isAppleSilicon = false
@@ -33,6 +34,22 @@ struct PermissionsView: View {
                     granted: settings.showFloatingWindow
                 )
             }
+
+            settingsSection(L10n.tr("Diagnostics"), textColor: theme.textMuted) {
+                Button {
+                    exportDiagnostics()
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.badge.arrow.up").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
+                        Text(L10n.tr("Export Diagnostics")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                        Spacer()
+                        Image(systemName: "square.and.arrow.up").font(.system(size: 11)).foregroundColor(theme.textMuted)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L10n.tr("Export Diagnostics"))
+            }
         }
         .onAppear {
             isAppleSilicon = ThermalMonitor.isAppleSilicon
@@ -59,5 +76,22 @@ struct PermissionsView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func exportDiagnostics() {
+        let json = DatabaseManager.shared?.exportDiagnostics() ?? "{}"
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        let safeDate = safeFilenameDate()
+        panel.nameFieldStringValue = "NetMonitor-diagnostic-\(safeDate).json"
+        panel.title = L10n.tr("Export Diagnostics")
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                try json.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                LogService.error("diagnostics_export_failed", detail: error.localizedDescription)
+            }
+            LogService.log(.userAction, event: "diagnostics_exported")
+        }
     }
 }

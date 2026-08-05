@@ -77,23 +77,6 @@ struct SettingsView: View {
         visibility.canDisable(element)
     }
 
-    private func exportDiagnostics() {
-        let json = DatabaseManager.shared?.exportDiagnostics() ?? "{}"
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.json]
-        let safeDate = safeFilenameDate()
-        panel.nameFieldStringValue = "NetMonitor-diagnostic-\(safeDate).json"
-        panel.title = L10n.tr("Export Diagnostics")
-        if panel.runModal() == .OK, let url = panel.url {
-            do {
-                try json.write(to: url, atomically: true, encoding: .utf8)
-            } catch {
-                LogService.error("diagnostics_export_failed", detail: error.localizedDescription)
-            }
-            LogService.log(.userAction, event: "diagnostics_exported")
-        }
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             settingsTabBar.padding(.top, 20).padding(.horizontal, 20)
@@ -257,38 +240,6 @@ struct SettingsView: View {
                 }
             }
 
-            settingsSection(L10n.tr("Startup"), textColor: theme.textMuted) {
-                HStack {
-                    Image(systemName: "power").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
-                    Text(L10n.tr("Launch at Login")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { settings.launchAtLogin },
-                        set: { newValue in
-                            settings.launchAtLogin = newValue
-                            if !LoginItemManager.setEnabled(newValue) {
-                                settings.launchAtLogin = !newValue
-                            }
-                        }
-                    ))
-                    .toggleStyle(.switch).controlSize(.small).accessibilityLabel(L10n.tr("Launch at Login"))
-                }
-            }
-
-            settingsSection(L10n.tr("Updates"), textColor: theme.textMuted) {
-                HStack {
-                    Image(systemName: "arrow.down.circle").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
-                    Text("\(L10n.tr("Current Version")) \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")")
-                        .font(.system(size: 12)).foregroundColor(theme.textSecondary)
-                    Spacer()
-                    Button(L10n.tr("Check for Updates")) {
-                        Updater.shared.checkForUpdates()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-
             settingsSection(L10n.tr("Floating Window"), textColor: theme.textMuted) {
                 HStack {
                     Image(systemName: "pip").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
@@ -420,20 +371,36 @@ struct SettingsView: View {
                 }
             }
 
-            settingsSection(L10n.tr("Diagnostics"), textColor: theme.textMuted) {
-                Button {
-                    exportDiagnostics()
-                } label: {
-                    HStack {
-                        Image(systemName: "doc.badge.arrow.up").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
-                        Text(L10n.tr("Export Diagnostics")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
-                        Spacer()
-                        Image(systemName: "square.and.arrow.up").font(.system(size: 11)).foregroundColor(theme.textMuted)
-                    }
-                    .contentShape(Rectangle())
+            settingsSection(L10n.tr("Startup"), textColor: theme.textMuted) {
+                HStack {
+                    Image(systemName: "power").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
+                    Text(L10n.tr("Launch at Login")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { settings.launchAtLogin },
+                        set: { newValue in
+                            settings.launchAtLogin = newValue
+                            if !LoginItemManager.setEnabled(newValue) {
+                                settings.launchAtLogin = !newValue
+                            }
+                        }
+                    ))
+                    .toggleStyle(.switch).controlSize(.small).accessibilityLabel(L10n.tr("Launch at Login"))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L10n.tr("Export Diagnostics"))
+            }
+
+            settingsSection(L10n.tr("Updates"), textColor: theme.textMuted) {
+                HStack {
+                    Image(systemName: "arrow.down.circle").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
+                    Text("\(L10n.tr("Current Version")) \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")")
+                        .font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                    Spacer()
+                    Button(L10n.tr("Check for Updates")) {
+                        Updater.shared.checkForUpdates()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
             }
 
             versionText
