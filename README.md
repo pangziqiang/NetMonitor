@@ -188,28 +188,6 @@ Sources/
 - **发布标签**：发版时打带日期时间的 tag，格式 `v<VERSION>-<YYYYMMDD>-<HHMMSS>`（如 `v1.11.0-20260714-012700`），并推送 `git push --tags`。
 - **发布产物**：`scripts/create-dmg.sh` 生成 `NetMonitor-<VERSION>.dmg`，上传到 GitHub Release。
 
-## 更新记录
-
-### v1.11.1 (2026-08-06)
-- **修复**: 浮窗双击打开流量统计/设置不稳定 — 通知监听改为 App 级常驻（WindowRouter），不再依赖设置窗口是否打开
-- **修复**: 流量统计时视图跨午夜后自动切回当天
-- **修复**: IOReport 订阅句柄为 0 时不再误判失败
-- **重构**: ISO8601 工具函数收敛到 SpeedFormatter（NSLock 线程安全），删除重复实现
-
-### v1.10.0 (2026-07-14)
-- **新增**: 柱状图双击钻取 — 时/日视图双击柱子弹出该时段进程流量明细
-- **新增**: 后台进程流量追踪 — ProcessNetworkReader 持续运行 nettop 累计入库
-- **修复**: macOS Sequoia nettop 列名变更适配（bytes_in/bytes_out，无名进程列）
-- **修复**: nettop terminationHandler 竞态条件导致 15s 超时
-- **优化**: split(omittingEmptySubsequences:false) 适配 Sequoia CSV 空字段
-- **优化**: CI lint 清零（213→0 违规）
-- **版本**: 1.10.0 (build 10)，DMG 版本化命名
-
-### v1.9.0 (2026-07-09)
-- IOReport 推送式监控（Apple Silicon 回调式 CPU/网络，Intel 优雅降级）
-- 全局线程安全审计修复（14 Critical + 26 High）
-- 流量统计时/日/月视图、统一深色背景、菜单栏预览行
-
 ## 已知限制
 
 - 首次启动温度显示需要约 9 秒（SMC 轮询机制）
