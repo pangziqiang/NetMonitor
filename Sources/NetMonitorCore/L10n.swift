@@ -44,6 +44,8 @@ public enum L10n {
         "Updates": "更新",
         "Current Version": "当前版本",
         "Check for Updates…": "检查更新…",
+        "Earlier": "更早",
+        "Later": "更晚",
         "Traffic Statistics": "流量统计",
         "Permissions": "权限",
         "Menu Bar Items": "菜单栏显示项目",

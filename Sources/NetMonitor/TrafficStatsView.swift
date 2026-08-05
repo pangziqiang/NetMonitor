@@ -54,6 +54,10 @@ struct TrafficStatsView: View {
     /// Week-page date stamps (YYYY-MM-DD), index-aligned with bars
     @State private var dayDates: [String] = []
 
+    /// Day view (24 days) pager: 0 = ends today, +1 = one 24-day window back
+    @State private var dayPageOffset = 0
+    @State private var dayMaxOffset = 0
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             titleBar
@@ -131,6 +135,11 @@ struct TrafficStatsView: View {
                 dateDropdown
             }
 
+            if timeRange == .day {
+                Divider().frame(height: 16)
+                dayRangePager
+            }
+
             Spacer()
         }
         .padding(.horizontal, 20)
@@ -161,6 +170,54 @@ struct TrafficStatsView: View {
         if dateStr == todayStr { return L10n.tr("Today") }
         guard let date = iso8601Date(from: dateStr + "T00:00:00.000Z") else { return dateStr }
         return Self.cachedDateFormatter.string(from: date)
+    }
+
+    // MARK: - Day Range Pager (24天视图翻页)
+
+    private var dayRangePager: some View {
+        HStack(spacing: 8) {
+            Button {
+                guard dayPageOffset < dayMaxOffset else { return }
+                dayPageOffset += 1
+                loadData()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 24, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(dayPageOffset >= dayMaxOffset ? theme.textMuted.opacity(0.2) : theme.textSecondary)
+            .disabled(dayPageOffset >= dayMaxOffset)
+            .accessibilityLabel(L10n.tr("Earlier"))
+
+            Text(dayRangeLabel)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(theme.textSecondary)
+                .frame(minWidth: 92)
+
+            Button {
+                guard dayPageOffset > 0 else { return }
+                dayPageOffset -= 1
+                loadData()
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 24, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(dayPageOffset == 0 ? theme.textMuted.opacity(0.2) : theme.textSecondary)
+            .disabled(dayPageOffset == 0)
+            .accessibilityLabel(L10n.tr("Later"))
+        }
+    }
+
+    private var dayRangeLabel: String {
+        guard dayDates.count == 24, let first = dayDates.first, let last = dayDates.last else { return "" }
+        let f = first.split(separator: "-"), l = last.split(separator: "-")
+        guard f.count == 3, l.count == 3 else { return "" }
+        return "\(f[1])/\(f[2]) ~ \(l[1])/\(l[2])"
     }
 
     // MARK: - Scroll Content
@@ -576,13 +633,20 @@ struct TrafficStatsView: View {
             dataByDate[row.date] = (row.totalDown, row.totalUp)
         }
 
-        // 锚定最近 24 天（到今天），与年视图"锚定当前"保持一致。
-        // 之前锚定"最早数据所在周的周一"，数据积累后窗口永不前进，页面变成死数据。
+        // 锚定窗口终点：默认今天；翻页时往回（每页 24 天）。
         let now = Date()
         let todayComp = cal.dateComponents([.year, .month, .day], from: now)
         guard let today = cal.date(from: todayComp),
-              let startDate = cal.date(byAdding: .day, value: -23, to: today) else {
+              let endDate = cal.date(byAdding: .day, value: -dayPageOffset * 24, to: today),
+              let startDate = cal.date(byAdding: .day, value: -23, to: endDate) else {
             page = nil; return
+        }
+
+        // 最大可翻页数：最早数据到今天的天数 / 24（保证窗口内至少还有数据）
+        if let earliest = dataByDate.keys.min(),
+           let earliestDate = iso8601Date(from: earliest + "T00:00:00.000Z") {
+            let daysBack = cal.dateComponents([.day], from: earliestDate, to: today).day ?? 0
+            dayMaxOffset = max(0, daysBack / 24)
         }
 
         let weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
@@ -593,7 +657,8 @@ struct TrafficStatsView: View {
             guard let d = cal.date(byAdding: .day, value: i, to: startDate) else { continue }
             let dateStr = currentDateStamp(from: d)
             let wd = cal.component(.weekday, from: d)
-            let isTodayBucket = (dateStr == todayStr)
+            // 实时今日桶只在窗口锚定今天时生效；历史窗口用数据库数据
+            let isTodayBucket = (dateStr == todayStr && dayPageOffset == 0)
             if isTodayBucket {
                 dn.append(engine.todayDown)
                 up.append(engine.todayUp)
