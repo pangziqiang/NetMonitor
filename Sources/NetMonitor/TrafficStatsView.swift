@@ -58,6 +58,8 @@ struct TrafficStatsView: View {
     @State private var dayWindowEndStr = ""
     /// 页面数据指纹：数据未变化时跳过整页重建/重绘（避免 3 秒定时器空转）
     @State private var lastPageFingerprint = -1
+    /// 自定义日期下拉面板（替代系统 Picker 菜单，避免选中早期日期时菜单向上弹出被遮挡）
+    @State private var showDateDropdown = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -165,17 +167,37 @@ struct TrafficStatsView: View {
     }
 
     private var dateDropdown: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "calendar")
-                .font(.system(size: 11))
-                .foregroundColor(theme.textMuted)
-            Picker("", selection: $selectedDateStr) {
+        Button {
+            showDateDropdown.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 11))
+                    .foregroundColor(theme.textMuted)
+                Text(formatDateStr(selectedDateStr))
+                    .font(.system(size: 12))
+                    .foregroundColor(theme.textSecondary)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9))
+                    .foregroundColor(theme.textMuted)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(theme.textMuted.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showDateDropdown, arrowEdge: .top) {
+            dropdownPanel {
                 ForEach(availableDateStrs, id: \.self) { dateStr in
-                    Text(formatDateStr(dateStr)).tag(dateStr)
+                    pickerRow(label: formatDateStr(dateStr), value: dateStr, selected: selectedDateStr) {
+                        selectedDateStr = dateStr
+                        todayBaseLoaded = false
+                        showDateDropdown = false
+                    }
                 }
             }
-            .pickerStyle(.menu)
-            .frame(width: 140)
         }
     }
 
@@ -216,22 +238,88 @@ struct TrafficStatsView: View {
                 shiftDayWindow(-24)
             }
 
-            Picker("", selection: $dayWindowEndStr) {
-                ForEach(dayWindowOptions, id: \.end) { opt in
-                    Text(opt.label).tag(opt.end)
+            Button {
+                showDateDropdown.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 11))
+                        .foregroundColor(theme.textMuted)
+                    Text(dayDropdownLabel)
+                        .font(.system(size: 12))
+                        .foregroundColor(theme.textSecondary)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9))
+                        .foregroundColor(theme.textMuted)
                 }
-                Divider()
-                ForEach(daySingleDates, id: \.self) { dateStr in
-                    Text(formatDateStr(dateStr)).tag(dateStr)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(theme.textMuted.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showDateDropdown, arrowEdge: .top) {
+                dropdownPanel {
+                    ForEach(dayWindowOptions, id: \.end) { opt in
+                        pickerRow(label: opt.label, value: opt.end, selected: dayEndDate) {
+                            dayWindowEndStr = opt.end
+                            showDateDropdown = false
+                        }
+                    }
+                    Divider().padding(.vertical, 4)
+                    ForEach(daySingleDates, id: \.self) { dateStr in
+                        pickerRow(label: formatDateStr(dateStr), value: dateStr, selected: dayEndDate) {
+                            dayWindowEndStr = dateStr
+                            showDateDropdown = false
+                        }
+                    }
                 }
             }
-            .pickerStyle(.menu)
-            .frame(width: 170)
 
             stepButton(systemImage: "chevron.right", enabled: dayCanGoLater) {
                 shiftDayWindow(+24)
             }
         }
+    }
+
+    private var dayDropdownLabel: String {
+        if let opt = dayWindowOptions.first(where: { $0.end == dayEndDate }) {
+            return opt.label
+        }
+        return formatDateStr(dayEndDate)
+    }
+
+    /// 自定义下拉面板：scrollable 列表，popover 自动保持在屏幕内，不会被边缘裁剪
+    private func dropdownPanel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                content()
+            }
+        }
+        .frame(width: 230, height: 340)
+        .background(theme.appBg)
+    }
+
+    private func pickerRow(label: String, value: String, selected: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Text(label)
+                    .font(.system(size: 12))
+                    .foregroundColor(value == selected ? .downloadColor : theme.textSecondary)
+                Spacer()
+                if value == selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10))
+                        .foregroundColor(.downloadColor)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(value == selected ? Color.downloadColor.opacity(0.12) : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var dayEndDate: String {
