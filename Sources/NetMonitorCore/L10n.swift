@@ -170,14 +170,13 @@ public enum L10n {
         "Traffic Volume": "流量",
         "Peak": "峰值",
         "Average": "平均",
-        "Hour": "时间",
+        "Hour": "时",
         "Avg Speed": "平均速度",
         "Peak Speed": "峰值速度",
         "Avg Upload": "平均上传",
         "Avg Download": "平均下载",
         "Peak Upload": "峰值上传",
         "Peak Download": "峰值下载",
-        "Week": "周",
         "Traffic Stats": "流量统计",
         "Traffic Stats…": "流量统计…",
         "Download Traffic": "下载流量",
@@ -192,6 +191,6 @@ public enum L10n {
         "This Month": "本月",
         "All Data": "全部数据",
         "Day": "日",
-        "Year": "年"
+        "Month": "月"
     ]
 }

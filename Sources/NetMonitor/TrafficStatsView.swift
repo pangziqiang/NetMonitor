@@ -5,15 +5,15 @@ import AppKit
 // MARK: - Time Range
 
 enum TrafficTimeRange: String, CaseIterable {
-    case today
-    case week
-    case year
+    case hour
+    case day
+    case month
 
     var displayName: String {
         switch self {
-        case .today: return L10n.tr("Day")
-        case .week: return L10n.tr("Week")
-        case .year: return L10n.tr("Year")
+        case .hour: return L10n.tr("Hour")
+        case .day: return L10n.tr("Day")
+        case .month: return L10n.tr("Month")
         }
     }
 }
@@ -32,7 +32,7 @@ struct TrafficStatsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.colorScheme) var colorScheme
 
-    @State private var timeRange: TrafficTimeRange = .today
+    @State private var timeRange: TrafficTimeRange = .hour
     @State private var page: BarChartPage?
     @State private var selectedDateStr: String = ""
     @State private var availableDateStrs: [String] = []
@@ -52,7 +52,7 @@ struct TrafficStatsView: View {
     @State private var detailBarUp: UInt64 = 0
 
     /// Week-page date stamps (YYYY-MM-DD), index-aligned with bars
-    @State private var weekDates: [String] = []
+    @State private var dayDates: [String] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -79,7 +79,7 @@ struct TrafficStatsView: View {
             refreshTimer = nil
         }
         .onChange(of: timeRange) { _, _ in todayBaseLoaded = false; loadData() }
-        .onChange(of: selectedDateStr) { _, _ in todayBaseLoaded = false; if timeRange == .today { loadData() } }
+        .onChange(of: selectedDateStr) { _, _ in todayBaseLoaded = false; if timeRange == .hour { loadData() } }
         .sheet(isPresented: $showDetailSheet) {
             processDetailSheet
         }
@@ -126,7 +126,7 @@ struct TrafficStatsView: View {
                 .buttonStyle(.plain)
             }
 
-            if timeRange == .today && !availableDateStrs.isEmpty {
+            if timeRange == .hour && !availableDateStrs.isEmpty {
                 Divider().frame(height: 16)
                 dateDropdown
             }
@@ -250,7 +250,7 @@ struct TrafficStatsView: View {
         var label = ""
 
         switch timeRange {
-        case .today:
+        case .hour:
             let dateParts = selectedDateStr.split(separator: "-")
             guard dateParts.count == 3,
                   let year = Int(dateParts[0]), let month = Int(dateParts[1]), let day = Int(dateParts[2])
@@ -261,17 +261,17 @@ struct TrafficStatsView: View {
             endDate = cal.date(byAdding: .hour, value: 1, to: startDate ?? dayStart)
             label = String(format: "%02d:00", index)
 
-        case .week:
-            guard index < weekDates.count else { return }
-            let parts = weekDates[index].split(separator: "-")
+        case .day:
+            guard index < dayDates.count else { return }
+            let parts = dayDates[index].split(separator: "-")
             guard parts.count == 3,
                   let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2])
             else { return }
             startDate = cal.date(from: DateComponents(year: year, month: month, day: day))
             endDate = cal.date(byAdding: .day, value: 1, to: startDate ?? Date())
-            label = weekDates[index]
+            label = dayDates[index]
 
-        case .year:
+        case .month:
             return  // month-level too broad for process detail
         }
 
@@ -389,7 +389,7 @@ struct TrafficStatsView: View {
     // MARK: - Day Change Handling
 
     private func syncSelectedDateToToday() {
-        guard timeRange == .today else { return }
+        guard timeRange == .hour else { return }
         let comp = Calendar.current.dateComponents([.year, .month, .day], from: Date())
         guard let year = comp.year, let month = comp.month, let day = comp.day else { return }
         let todayStr = String(format: "%04d-%02d-%02d", year, month, day)
@@ -400,7 +400,7 @@ struct TrafficStatsView: View {
     }
 
     private func syncSelectedDateOnTimer() {
-        guard timeRange == .today else { return }
+        guard timeRange == .hour else { return }
         let comp = Calendar.current.dateComponents([.year, .month, .day], from: Date())
         guard let year = comp.year, let month = comp.month, let day = comp.day else { return }
         let todayStr = String(format: "%04d-%02d-%02d", year, month, day)
@@ -421,18 +421,18 @@ struct TrafficStatsView: View {
         let db = DatabaseManager.shared
         guard let db else { page = nil; return }
         switch timeRange {
-        case .today:
+        case .hour:
+            loadHour(db)
+        case .day:
             loadDay(db)
-        case .week:
-            loadWeek(db)
-        case .year:
-            loadYear(db)
+        case .month:
+            loadMonth(db)
         }
     }
 
     // MARK: - Day (24h)
 
-    private func loadDay(_ db: DatabaseManager) {
+    private func loadHour(_ db: DatabaseManager) {
         let dateStr = selectedDateStr
 
         let dateParts = dateStr.split(separator: "-")
@@ -559,14 +559,14 @@ struct TrafficStatsView: View {
             dn: dn, up: up, l1: l1, l2: l2,
             fut: { $0 > futureHour },
             hasData: { idx in idx < hasData.count && hasData[idx] },
-            title: L10n.tr("Day"),
+            title: L10n.tr("Hour"),
             s1: s1, s2: s2, a1: a1, a2: a2
         )
     }
 
     // MARK: - Week (从最早数据所在周的周一开始，24天)
 
-    private func loadWeek(_ db: DatabaseManager) {
+    private func loadDay(_ db: DatabaseManager) {
         let summary = db.dailyTrafficSummary(days: 730)
         let todayStr = currentDateStamp()
 
@@ -610,7 +610,7 @@ struct TrafficStatsView: View {
             dates.append(dateStr)
         }
 
-        weekDates = dates
+        dayDates = dates
 
         let s1 = dn.reduce(0, +), s2 = up.reduce(0, +)
         let totalSec = Double(24 * 86400)
@@ -619,14 +619,14 @@ struct TrafficStatsView: View {
             dn: dn, up: up, l1: l1, l2: l2,
             fut: { idx in idx < dates.count && dates[idx] > todayStr },
             hasData: { idx in idx < hasDataArr.count && hasDataArr[idx] },
-            title: L10n.tr("Week"),
+            title: L10n.tr("Day"),
             s1: s1, s2: s2, a1: Double(s1) / totalSec, a2: Double(s2) / totalSec
         )
     }
 
     // MARK: - Year (从最早数据所在月开始，24个月)
 
-    private func loadYear(_ db: DatabaseManager) {
+    private func loadMonth(_ db: DatabaseManager) {
         let summary = db.dailyTrafficSummary(days: 730)
 
         let cal = Calendar.current
@@ -680,7 +680,7 @@ struct TrafficStatsView: View {
             dn: dn, up: up, l1: l1, l2: l2,
             fut: { idx in idx < months.count && months[idx].key > currentMonthKey },
             hasData: { idx in idx < hasDataArr.count && hasDataArr[idx] },
-            title: L10n.tr("Year"),
+            title: L10n.tr("Month"),
             s1: s1, s2: s2, a1: Double(s1) / totalSec, a2: Double(s2) / totalSec
         )
     }
