@@ -54,9 +54,8 @@ struct TrafficStatsView: View {
     /// Week-page date stamps (YYYY-MM-DD), index-aligned with bars
     @State private var dayDates: [String] = []
 
-    /// Day view (24 days) pager: 0 = ends today, +1 = one 24-day window back
-    @State private var dayPageOffset = 0
-    @State private var dayMaxOffset = 0
+    /// Day view (24 days) window end date (YYYY-MM-DD); empty = today
+    @State private var dayWindowEndStr = ""
     /// 页面数据指纹：数据未变化时跳过整页重建/重绘（避免 3 秒定时器空转）
     @State private var lastPageFingerprint = -1
 
@@ -84,6 +83,7 @@ struct TrafficStatsView: View {
         }
         .onChange(of: timeRange) { _, _ in todayBaseLoaded = false; loadData() }
         .onChange(of: selectedDateStr) { _, _ in todayBaseLoaded = false; if timeRange == .hour { loadData() } }
+        .onChange(of: dayWindowEndStr) { _, _ in if timeRange == .day { loadData() } }
         .sheet(isPresented: $showDetailSheet) {
             processDetailSheet
         }
@@ -132,12 +132,12 @@ struct TrafficStatsView: View {
 
             if timeRange == .hour && !availableDateStrs.isEmpty {
                 Divider().frame(height: 16)
-                dateDropdown
+                hourDateControl
             }
 
             if timeRange == .day {
                 Divider().frame(height: 16)
-                dayRangePager
+                dayRangeControl
             }
 
             Spacer()
@@ -147,6 +147,22 @@ struct TrafficStatsView: View {
     }
 
     // MARK: - Date Dropdown
+
+    // MARK: - 时视图: ◀ 日期下拉 ▶
+
+    private var hourDateControl: some View {
+        HStack(spacing: 6) {
+            stepButton(systemImage: "chevron.left", enabled: canGoHourEarlier) {
+                shiftHourDate(+1)
+            }
+
+            dateDropdown
+
+            stepButton(systemImage: "chevron.right", enabled: canGoHourLater) {
+                shiftHourDate(-1)
+            }
+        }
+    }
 
     private var dateDropdown: some View {
         HStack(spacing: 6) {
@@ -163,6 +179,26 @@ struct TrafficStatsView: View {
         }
     }
 
+    private var canGoHourEarlier: Bool {
+        guard let idx = availableDateStrs.firstIndex(of: selectedDateStr) else { return false }
+        return idx < availableDateStrs.count - 1
+    }
+
+    private var canGoHourLater: Bool {
+        guard let idx = availableDateStrs.firstIndex(of: selectedDateStr) else { return false }
+        return idx > 0
+    }
+
+    private func shiftHourDate(_ delta: Int) {
+        guard let idx = availableDateStrs.firstIndex(of: selectedDateStr) else { return }
+        let newIdx = min(max(idx + delta, 0), availableDateStrs.count - 1)
+        let newDate = availableDateStrs[newIdx]
+        guard newDate != selectedDateStr else { return }
+        selectedDateStr = newDate
+        todayBaseLoaded = false
+        loadData()
+    }
+
     private func formatDateStr(_ dateStr: String) -> String {
         let todayComp = Calendar.current.dateComponents([.year, .month, .day], from: Date())
         guard let ty = todayComp.year, let tm = todayComp.month, let td = todayComp.day else { return dateStr }
@@ -172,45 +208,72 @@ struct TrafficStatsView: View {
         return Self.cachedDateFormatter.string(from: date)
     }
 
-    // MARK: - Day Range Pager (24天视图翻页)
+    // MARK: - 日视图: ◀ 窗口终点下拉 ▶（24天窗口）
 
-    private var dayRangePager: some View {
-        HStack(spacing: 8) {
-            Button {
-                guard dayPageOffset < dayMaxOffset else { return }
-                dayPageOffset += 1
-                loadData()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 24, height: 22)
-                    .contentShape(Rectangle())
+    private var dayRangeControl: some View {
+        HStack(spacing: 6) {
+            stepButton(systemImage: "chevron.left", enabled: dayCanGoEarlier) {
+                shiftDayWindow(-24)
             }
-            .buttonStyle(.plain)
-            .foregroundColor(dayPageOffset >= dayMaxOffset ? theme.textMuted.opacity(0.2) : theme.textSecondary)
-            .disabled(dayPageOffset >= dayMaxOffset)
-            .accessibilityLabel(L10n.tr("Earlier"))
+
+            Picker("", selection: $dayWindowEndStr) {
+                ForEach(availableDateStrs, id: \.self) { dateStr in
+                    Text(formatDateStr(dateStr)).tag(dateStr)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 140)
 
             Text(dayRangeLabel)
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(theme.textSecondary)
                 .frame(minWidth: 92)
 
-            Button {
-                guard dayPageOffset > 0 else { return }
-                dayPageOffset -= 1
-                loadData()
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 24, height: 22)
-                    .contentShape(Rectangle())
+            stepButton(systemImage: "chevron.right", enabled: dayCanGoLater) {
+                shiftDayWindow(+24)
             }
-            .buttonStyle(.plain)
-            .foregroundColor(dayPageOffset == 0 ? theme.textMuted.opacity(0.2) : theme.textSecondary)
-            .disabled(dayPageOffset == 0)
-            .accessibilityLabel(L10n.tr("Later"))
         }
+    }
+
+    private var dayEndDate: String {
+        dayWindowEndStr.isEmpty ? currentDateStamp() : dayWindowEndStr
+    }
+
+    private var dayCanGoEarlier: Bool {
+        guard let earliest = availableDateStrs.last,
+              let end = iso8601Date(from: dayEndDate + "T00:00:00.000Z"),
+              let back = Calendar.current.date(byAdding: .day, value: -24, to: end) else { return false }
+        return currentDateStamp(from: back) >= earliest
+    }
+
+    private var dayCanGoLater: Bool {
+        dayEndDate < currentDateStamp()
+    }
+
+    private func shiftDayWindow(_ delta: Int) {
+        guard let end = iso8601Date(from: dayEndDate + "T00:00:00.000Z"),
+              let target = Calendar.current.date(byAdding: .day, value: delta, to: end) else { return }
+        let targetStr = currentDateStamp(from: target)
+        let todayStr = currentDateStamp()
+        if delta > 0 {
+            guard targetStr <= todayStr else { return }
+        } else {
+            guard let earliest = availableDateStrs.last, targetStr >= earliest else { return }
+        }
+        guard targetStr != dayEndDate else { return }
+        dayWindowEndStr = targetStr
+    }
+
+    private func stepButton(systemImage: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 24, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(enabled ? theme.textSecondary : theme.textMuted.opacity(0.2))
+        .disabled(!enabled)
     }
 
     private var dayRangeLabel: String {
@@ -441,6 +504,9 @@ struct TrafficStatsView: View {
         if selectedDateStr.isEmpty || !availableDateStrs.contains(selectedDateStr) {
             selectedDateStr = todayStr
         }
+        if dayWindowEndStr.isEmpty {
+            dayWindowEndStr = todayStr
+        }
     }
 
     // MARK: - Data Loading
@@ -454,7 +520,7 @@ struct TrafficStatsView: View {
         case .hour:
             if selectedDateStr.isEmpty || selectedDateStr == todayStr { loadData() }
         case .day:
-            if dayPageOffset == 0 { loadData() }
+            if dayWindowEndStr.isEmpty || dayWindowEndStr == todayStr { loadData() }
         case .month:
             loadData()
         }
@@ -619,20 +685,10 @@ struct TrafficStatsView: View {
             dataByDate[row.date] = (row.totalDown, row.totalUp)
         }
 
-        // 锚定窗口终点：默认今天；翻页时往回（每页 24 天）。
-        let now = Date()
-        let todayComp = cal.dateComponents([.year, .month, .day], from: now)
-        guard let today = cal.date(from: todayComp),
-              let endDate = cal.date(byAdding: .day, value: -dayPageOffset * 24, to: today),
+        // 锚定窗口终点：默认今天；下拉/翻页可改终点（每页 24 天）。
+        guard let endDate = iso8601Date(from: dayEndDate + "T00:00:00.000Z"),
               let startDate = cal.date(byAdding: .day, value: -23, to: endDate) else {
             page = nil; return
-        }
-
-        // 最大可翻页数：最早数据到今天的天数 / 24（保证窗口内至少还有数据）
-        if let earliest = dataByDate.keys.min(),
-           let earliestDate = iso8601Date(from: earliest + "T00:00:00.000Z") {
-            let daysBack = cal.dateComponents([.day], from: earliestDate, to: today).day ?? 0
-            dayMaxOffset = max(0, daysBack / 24)
         }
 
         let weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
@@ -644,7 +700,7 @@ struct TrafficStatsView: View {
             let dateStr = currentDateStamp(from: d)
             let wd = cal.component(.weekday, from: d)
             // 实时今日桶只在窗口锚定今天时生效；历史窗口用数据库数据
-            let isTodayBucket = (dateStr == todayStr && dayPageOffset == 0)
+            let isTodayBucket = (dateStr == todayStr && dayEndDate == todayStr)
             if isTodayBucket {
                 dn.append(engine.todayDown)
                 up.append(engine.todayUp)
