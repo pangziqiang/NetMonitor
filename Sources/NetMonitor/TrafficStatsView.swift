@@ -220,6 +220,10 @@ struct TrafficStatsView: View {
                 ForEach(dayWindowOptions, id: \.end) { opt in
                     Text(opt.label).tag(opt.end)
                 }
+                Divider()
+                ForEach(daySingleDates, id: \.self) { dateStr in
+                    Text(formatDateStr(dateStr)).tag(dateStr)
+                }
             }
             .pickerStyle(.menu)
             .frame(width: 170)
@@ -288,6 +292,12 @@ struct TrafficStatsView: View {
             n += 1
         }
         return options
+    }
+
+    /// 单日列表：排除已出现在"时间段"里的终点日期，避免 Picker tag 重复
+    private var daySingleDates: [String] {
+        let alignedEnds = Set(dayWindowOptions.map { $0.end })
+        return availableDateStrs.filter { !alignedEnds.contains($0) }
     }
 
     private func dayRangeText(start: Date, end: Date) -> String {
