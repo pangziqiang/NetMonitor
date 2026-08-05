@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>NetMonitor Updates</title>
+    <link>https://github.com/pangziqiang/NetMonitor/releases</link>
+    <description>Most recent changes with links to updates.</description>
+    <language>en</language>
+    <item>
+      <title>NetMonitor 1.11.1</title>
+      <pubDate>Thu, 06 Aug 2026 01:20:11 +0800</pubDate>
+      <sparkle:version>11</sparkle:version>
+      <sparkle:shortVersionString>1.11.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/pangziqiang/NetMonitor/releases/download/v1.11.1/NetMonitor-1.11.1.dmg" sparkle:edSignature="4NUy59P4JeCruPtTSHox/IA+JZrZnpvZ3zl2HtO/0LGsr0PzDXCey8Z+X1vEc2DVbRyd7mQ5yqqOWZIoeo9SBg==" length="2348366"/>
+    </item>
+  </channel>
+</rss>

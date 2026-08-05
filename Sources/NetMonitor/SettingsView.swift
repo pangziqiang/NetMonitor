@@ -257,6 +257,38 @@ struct SettingsView: View {
                 }
             }
 
+            settingsSection(L10n.tr("Startup"), textColor: theme.textMuted) {
+                HStack {
+                    Image(systemName: "power").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
+                    Text(L10n.tr("Launch at Login")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { settings.launchAtLogin },
+                        set: { newValue in
+                            settings.launchAtLogin = newValue
+                            if !LoginItemManager.setEnabled(newValue) {
+                                settings.launchAtLogin = !newValue
+                            }
+                        }
+                    ))
+                    .toggleStyle(.switch).controlSize(.small).accessibilityLabel(L10n.tr("Launch at Login"))
+                }
+            }
+
+            settingsSection(L10n.tr("Updates"), textColor: theme.textMuted) {
+                HStack {
+                    Image(systemName: "arrow.down.circle").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
+                    Text("\(L10n.tr("Current Version")) \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")")
+                        .font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                    Spacer()
+                    Button(L10n.tr("Check for Updates")) {
+                        Updater.shared.checkForUpdates()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+
             settingsSection(L10n.tr("Floating Window"), textColor: theme.textMuted) {
                 HStack {
                     Image(systemName: "pip").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)

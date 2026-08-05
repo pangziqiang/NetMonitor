@@ -24,6 +24,14 @@
     <string>14.0</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>SUFeedURL</key>
+    <string>https://github.com/pangziqiang/NetMonitor/releases/latest/download/appcast.xml</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <false/>
+    <key>SUPublicEDKey</key>
+    <string>z02VxB5sg+dBrvlTskr3LkgaafWmxItnuOAcuzfMkwU=</string>
     <key>CFBundleLocalizations</key>
     <array>
         <string>zh-Hans</string>

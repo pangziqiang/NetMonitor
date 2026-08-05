@@ -51,6 +51,20 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
 cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
 
+# Embed Sparkle.framework (dynamic framework required by the auto-updater)
+SPARKLE_FRAMEWORK=$(find "$PROJECT_DIR/.build/artifacts" -path "*macos-arm64_x86_64/Sparkle.framework" -maxdepth 6 2>/dev/null | head -1)
+if [ -z "$SPARKLE_FRAMEWORK" ]; then
+    SPARKLE_FRAMEWORK=$(find "$PROJECT_DIR/.build" -path "*apple/Products/Release/Sparkle.framework" -maxdepth 5 2>/dev/null | head -1)
+fi
+if [ -n "$SPARKLE_FRAMEWORK" ]; then
+    mkdir -p "$APP_BUNDLE/Contents/Frameworks"
+    cp -R "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/"
+    install_name_tool -add_rpath @executable_path/../Frameworks "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+    echo "📦 Embedded Sparkle.framework"
+else
+    echo "⚠️  Sparkle.framework not found, skipping embed"
+fi
+
 # Copy icon
 if [ -f "$PROJECT_DIR/AppIcon.icns" ]; then
     cp "$PROJECT_DIR/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"

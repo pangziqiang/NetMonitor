@@ -4,6 +4,9 @@ import PackageDescription
 let package = Package(
     name: "NetMonitor",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+    ],
     targets: [
         .target(
             name: "NetMonitorCore",
@@ -15,7 +18,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "NetMonitor",
-            dependencies: ["NetMonitorCore"],
+            dependencies: ["NetMonitorCore", .product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/NetMonitor"
         ),
         .testTarget(

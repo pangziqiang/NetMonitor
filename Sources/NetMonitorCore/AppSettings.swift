@@ -115,6 +115,17 @@ public class AppSettings: ObservableObject {
         }
     }
 
+    // MARK: - Launch at Login
+
+    @Published public var launchAtLogin: Bool = false {
+        didSet {
+            if !isLoadingDefaults {
+                userDefaults.set(launchAtLogin, forKey: "launchAtLogin")
+                LogService.log(.userAction, event: "launch_at_login_changed", detail: "\(launchAtLogin)")
+            }
+        }
+    }
+
     // MARK: - Floating Window
 
     @Published public var showFloatingWindow: Bool = false {
@@ -169,6 +180,7 @@ public class AppSettings: ObservableObject {
             "displayUnit": DisplayUnit.auto.rawValue,
             "dataUnit": DataUnit.auto.rawValue,
             "showDockIcon": false,
+            "launchAtLogin": false,
             "showFloatingWindow": false,
             "floatShowSpeed": true,
             "floatShowTraffic": true,
@@ -220,6 +232,7 @@ public class AppSettings: ObservableObject {
             excludedInterfacePrefixesRaw = stored
         }
         showDockIcon = userDefaults.bool(forKey: "showDockIcon")
+        launchAtLogin = userDefaults.bool(forKey: "launchAtLogin")
         showFloatingWindow = userDefaults.bool(forKey: "showFloatingWindow")
         floatShowSpeed = userDefaults.bool(forKey: "floatShowSpeed")
         floatShowTraffic = userDefaults.bool(forKey: "floatShowTraffic")

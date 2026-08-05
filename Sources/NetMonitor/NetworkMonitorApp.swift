@@ -30,6 +30,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         LogService.log(.lifecycle, event: "app_launched", detail: "os=\(ProcessInfo.processInfo.operatingSystemVersionString)")
+        LoginItemManager.sync(with: settings)
+        Updater.shared.start()
         engine.start()
         system.start()
         let mgr = StatusItemManager(engine: engine, system: system, appState: appState, settings: settings)
@@ -124,6 +126,7 @@ struct NetMonitorApp: App {
             CommandMenu(L10n.tr("NetMonitor")) {
                 Button(L10n.tr("Toggle Popover")) { appDelegate.statusItemManager?.togglePopover(nil) }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
+                Button(L10n.tr("Check for Updates…")) { Updater.shared.checkForUpdates() }
             }
             CommandGroup(replacing: .newItem) {}
             CommandMenu(L10n.tr("Monitor")) {
