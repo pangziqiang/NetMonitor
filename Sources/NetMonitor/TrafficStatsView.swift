@@ -343,7 +343,12 @@ struct TrafficStatsView: View {
         let targetStr = currentDateStamp(from: target)
         let todayStr = currentDateStamp()
         if delta > 0 {
-            guard targetStr <= todayStr else { return }
+            // 向右翻：不能超过今天；若 +24 天会越过今天，则直接落到今天窗口
+            if targetStr > todayStr {
+                guard todayStr != dayEndDate else { return }
+                dayWindowEndStr = todayStr
+                return
+            }
         } else {
             guard let earliest = availableDateStrs.last, targetStr >= earliest else { return }
         }
