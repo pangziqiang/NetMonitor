@@ -329,7 +329,10 @@ public final class SystemMonitor: ObservableObject, @unchecked Sendable {
                 self.memoryTemperatureHistory.append(atm.mem ?? self.memoryTemperatureHistory.last ?? Double.nan)
                 if self.memoryTemperatureHistory.count > self.historyMax { self.memoryTemperatureHistory.removeFirst() }
 
-                self.processMonitor.tick()
+                // 全进程扫描每 2 个 tick 一次（~10s），降低 popover 打开时的周期开销
+                if currentTick % 2 == 1 {
+                    self.processMonitor.tick()
+                }
 
                 let topNet = self.processMonitor.topByNetwork.prefix(3)
                 if !topNet.isEmpty {
