@@ -211,6 +211,12 @@ public class DatabaseManager {
             try exec("DELETE FROM process_traffic")
             UserDefaults.standard.set(true, forKey: cleanupKey)
         }
+        // v3: 清除 nettop 累计计数器被当成增量累加导致的翻倍脏数据
+        let procCleanupKey = "process_traffic_cleanup_v3"
+        if !UserDefaults.standard.bool(forKey: procCleanupKey) {
+            try exec("DELETE FROM process_traffic")
+            UserDefaults.standard.set(true, forKey: procCleanupKey)
+        }
         // One-time cleanup: remove corrupted traffic_daily rows (binary garbage dates)
         let dailyCleanupKey = "traffic_daily_cleanup_v1"
         if !UserDefaults.standard.bool(forKey: dailyCleanupKey) {

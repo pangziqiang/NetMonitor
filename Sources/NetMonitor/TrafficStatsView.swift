@@ -942,18 +942,26 @@ struct TrafficStatsView: View {
         let cal = Calendar.current
         switch timeRange {
         case .hour:
-            guard !selectedDateStr.isEmpty,
-                  let d = iso8601Date(from: selectedDateStr + "T00:00:00.000Z"),
-                  let end = cal.date(byAdding: .day, value: 1, to: d) else { return nil }
-            return (d, end)
+            let parts = selectedDateStr.split(separator: "-")
+            guard parts.count == 3,
+                  let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]),
+                  let start = cal.date(from: DateComponents(year: y, month: m, day: d)),
+                  let end = cal.date(byAdding: .day, value: 1, to: start) else { return nil }
+            return (start, end)
         case .day:
+            func localDate(_ s: String) -> Date? {
+                let p = s.split(separator: "-")
+                guard p.count == 3, let y = Int(p[0]), let m = Int(p[1]), let d = Int(p[2]) else { return nil }
+                return cal.date(from: DateComponents(year: y, month: m, day: d))
+            }
             guard let first = dayDates.first, let last = dayDates.last,
-                  let f = iso8601Date(from: first + "T00:00:00.000Z"),
-                  let l = iso8601Date(from: last + "T00:00:00.000Z"),
+                  let f = localDate(first), let l = localDate(last),
                   let end = cal.date(byAdding: .day, value: 1, to: l) else { return nil }
             return (f, end)
         case .month:
-            guard let s = iso8601Date(from: monthStartKey + "-01T00:00:00.000Z"),
+            let p = monthStartKey.split(separator: "-")
+            guard p.count == 2, let y = Int(p[0]), let m = Int(p[1]),
+                  let s = cal.date(from: DateComponents(year: y, month: m, day: 1)),
                   let e = cal.date(byAdding: .month, value: 24, to: s) else { return nil }
             return (s, e)
         }

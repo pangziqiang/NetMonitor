@@ -28,6 +28,9 @@ final class ProcessNetworkReader {
     private struct Accumulator {
         var totalDown: UInt64 = 0
         var totalUp: UInt64 = 0
+        /// nettop 的 bytes_in/bytes_out 是**累计计数器**，记录上一次样本的原值以计算增量
+        var lastRawDown: UInt64?
+        var lastRawUp: UInt64?
         var lastFlushMinute: String = ""
         var flushedDown: UInt64 = 0
         var flushedUp: UInt64 = 0
@@ -180,15 +183,20 @@ final class ProcessNetworkReader {
         let downVal = UInt64(cols[4].trimmingCharacters(in: .whitespaces)) ?? 0
         let upVal = UInt64(cols[5].trimmingCharacters(in: .whitespaces)) ?? 0
 
-        guard downVal > 0 || upVal > 0 else { return }
-
         let startTime = getProcessStartTime(pid: pid)
         let key = "\(pid)|\(name)|\(startTime)"
 
         accumLock.lock()
         var acc = accumulators[key] ?? Accumulator(lastFlushMinute: currentMinuteString())
-        acc.totalDown += downVal
-        acc.totalUp += upVal
+        // 累计计数器 → 相邻样本差值才是本间隔实际流量
+        if let prevDown = acc.lastRawDown, downVal >= prevDown {
+            acc.totalDown += downVal - prevDown
+        }
+        if let prevUp = acc.lastRawUp, upVal >= prevUp {
+            acc.totalUp += upVal - prevUp
+        }
+        acc.lastRawDown = downVal
+        acc.lastRawUp = upVal
         accumulators[key] = acc
         accumLock.unlock()
     }
