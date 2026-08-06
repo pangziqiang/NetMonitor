@@ -39,6 +39,14 @@ struct SystemGraphDetailView: View {
         }
     }
 
+    private var chartTimes: [Date] {
+        switch appState.systemGraphType {
+        case .cpu: return system.cpuHistoryTimes
+        case .gpu: return system.gpuHistoryTimes
+        case .memory: return system.memoryHistoryTimes
+        }
+    }
+
     private var iconName: String {
         switch appState.systemGraphType {
         case .cpu: return "cpu"
@@ -70,6 +78,7 @@ struct SystemGraphDetailView: View {
                         title: title,
                         series1: SeriesConfig(
                             data: chartData,
+                            times: chartTimes,
                             color: chartColor,
                             yMax: 100,
                             label: L10n.tr("Usage"),

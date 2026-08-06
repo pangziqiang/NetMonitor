@@ -3,11 +3,21 @@ import SwiftUI
 
 struct SeriesConfig {
     let data: [Double]
+    let times: [Date]
     let color: Color
     let yMax: Double
     let label: String
     let formatValue: (Double) -> String
     let formatYLabel: (Double) -> String
+    init(data: [Double], times: [Date] = [], color: Color, yMax: Double, label: String, formatValue: @escaping (Double) -> String, formatYLabel: @escaping (Double) -> String) {
+        self.data = data
+        self.times = times
+        self.color = color
+        self.yMax = yMax
+        self.label = label
+        self.formatValue = formatValue
+        self.formatYLabel = formatYLabel
+    }
 }
 
 struct DualSeriesChart: View {
@@ -19,6 +29,12 @@ struct DualSeriesChart: View {
     @State private var hoverX: CGFloat?
     @State private var hoverSize: CGSize?
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
 
     var body: some View {
         let chartContent = VStack(alignment: .leading, spacing: 6) {
@@ -44,9 +60,16 @@ struct DualSeriesChart: View {
                 if let hx = hoverX, let sz = hoverSize,
                    let idx = dataIndex(atX: hx, width: sz.width, count: series1.data.count) {
                     let val = series1.data[idx]
-                    Text(series1.formatValue(val))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundColor(series1.color)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(series1.formatValue(val))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(series1.color)
+                        if idx < series1.times.count {
+                            Text(Self.timeFormatter.string(from: series1.times[idx]))
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(series1.color.opacity(0.7))
+                        }
+                    }
                         .padding(4)
                         .background(.ultraThinMaterial)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
