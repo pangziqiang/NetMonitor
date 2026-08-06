@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 
 struct PermissionsView: View {
-    @State private var isAppleSilicon = false
+    @State private var hardware: HardwareInfo?
     @State private var isMonitoring = true  // engine always active while app runs
     @EnvironmentObject var settings: AppSettings
     @Environment(\.colorScheme) var colorScheme
@@ -12,13 +12,20 @@ struct PermissionsView: View {
     var body: some View {
         VStack(spacing: Spacing.lg) {
             settingsSection(L10n.tr("Current Device"), textColor: theme.textMuted) {
-                HStack {
-                    Image(systemName: isAppleSilicon ? "cpu" : "cpu.fill")
-                        .font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
-                    Text(isAppleSilicon ? L10n.tr("Apple Silicon") : L10n.tr("Intel"))
-                        .font(.system(size: 12)).foregroundColor(theme.textSecondary)
-                    Spacer()
-                    Circle().fill(Color.statusActive).frame(width: 8, height: 8)
+                if let hw = hardware {
+                    hardwareRow(icon: "desktopcomputer", name: L10n.tr("Machine Model"), value: hw.machineModel)
+                    hardwareRow(icon: "cpu", name: L10n.tr("Processor"), value: hw.cpuBrand)
+                    hardwareRow(icon: "cpu.fill", name: L10n.tr("Cores"), value: "\(hw.physicalCores) \(L10n.tr("Cores")) / \(hw.logicalCores) \(L10n.tr("Threads"))")
+                    hardwareRow(icon: "display", name: L10n.tr("Graphics"), value: hw.gpuName.isEmpty ? "—" : "\(hw.gpuName) · \(hw.gpuVRAM)")
+                    hardwareRow(icon: "memorychip", name: L10n.tr("Memory"), value: "\(hw.ramBytes / 1_073_741_824) GB")
+                    hardwareRow(icon: "apple.logo", name: L10n.tr("System"), value: hw.osVersion)
+                } else {
+                    HStack {
+                        Spacer()
+                        ProgressView().controlSize(.small)
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
                 }
             }
 
@@ -52,8 +59,30 @@ struct PermissionsView: View {
             }
         }
         .onAppear {
-            isAppleSilicon = ThermalMonitor.isAppleSilicon
+            DispatchQueue.global(qos: .userInitiated).async {
+                let info = HardwareInfo.load()
+                DispatchQueue.main.async {
+                    hardware = info
+                }
+            }
         }
+    }
+
+    private func hardwareRow(icon: String, name: String, value: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundColor(theme.textMuted)
+                .frame(width: 20)
+            Text(name).font(.system(size: 12)).foregroundColor(theme.textSecondary)
+            Spacer()
+            Text(value)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(theme.textPrimary)
+                .lineLimit(2)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 4)
     }
 
     private func permissionRow(icon: String, name: String, description: String, granted: Bool) -> some View {
