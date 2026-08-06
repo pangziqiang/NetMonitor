@@ -40,11 +40,11 @@ final class ProcessNetworkReader {
             guard acc.totalDown > 0 || acc.totalUp > 0 else { continue }
             // Key format: pid|name|startTime
             let parts = key.split(separator: "|", maxSplits: 2)
-            guard parts.count >= 2, let pid = Int32(parts[0]) else { continue }
+            guard parts.count >= 3, let pid = Int32(parts[0]), let startTime = time_t(parts[2]) else { continue }
             let name = String(parts[1])
             let down = Double(acc.totalDown)
             let up = Double(acc.totalUp)
-            result.append(ProcessSnapshot(pid: pid, name: name, cpuPercent: 0, rssBytes: 0, downloadBytes: down, uploadBytes: up))
+            result.append(ProcessSnapshot(pid: pid, name: name, cpuPercent: 0, rssBytes: 0, downloadBytes: down, uploadBytes: up, startTime: startTime))
         }
         return result.sorted { ($0.downloadBytes + $0.uploadBytes) > ($1.downloadBytes + $1.uploadBytes) }
     }

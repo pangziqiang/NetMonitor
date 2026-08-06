@@ -8,14 +8,16 @@ public struct ProcessSnapshot {
     public let rssBytes: UInt64
     public let downloadBytes: Double
     public let uploadBytes: Double
+    public let startTime: time_t
 
-    public init(pid: Int32, name: String, cpuPercent: Double, rssBytes: UInt64, downloadBytes: Double = 0, uploadBytes: Double = 0) {
+    public init(pid: Int32, name: String, cpuPercent: Double, rssBytes: UInt64, downloadBytes: Double = 0, uploadBytes: Double = 0, startTime: time_t = 0) {
         self.pid = pid
         self.name = name
         self.cpuPercent = cpuPercent
         self.rssBytes = rssBytes
         self.downloadBytes = downloadBytes
         self.uploadBytes = uploadBytes
+        self.startTime = startTime
     }
 }
 
@@ -57,9 +59,6 @@ public class ProcessMonitor: ObservableObject {
     }
 
     private let tickQueue = DispatchQueue(label: "com.opencode.networkmonitor.process", qos: .utility)
-
-    // MARK: - Configurable nettop timeout
-    private static let nettopTimeout: TimeInterval = 15.0
 
     public func tick() {
         guard isActive else { return }
@@ -123,91 +122,39 @@ public class ProcessMonitor: ObservableObject {
             guard let self, self.isActive else { return }
             let now = Date()
 
-            guard let raw = self.readNettop(), !raw.isEmpty else { return }
-
-            var snapshots: [ProcessSnapshot] = []
-            for (pid, (dl, ul)) in raw {
-                var downloadSpeed: Double = 0
-                var uploadSpeed: Double = 0
-                let startTime = getProcessStartTime(pid)
-                let key = "\(pid)_\(startTime)"
-
-                self.networkLock.lock()
-                let hasBaseline = self.networkHasBaseline
-                var interval: TimeInterval = 0
-                var dlDelta: UInt64 = 0
-                var ulDelta: UInt64 = 0
-
-                if hasBaseline, let prev = self.prevNetworkBytes[key] {
-                    interval = now.timeIntervalSince(self.lastNetworkTime)
-                    if interval > 0 {
-                        dlDelta = dl > prev.download ? dl - prev.download : 0
-                        ulDelta = ul > prev.upload ? ul - prev.upload : 0
-                        downloadSpeed = Double(dlDelta) / interval
-                        uploadSpeed = Double(ulDelta) / interval
-                    }
-                }
-                // Always update stored bytes
-                self.prevNetworkBytes[key] = (startTime, dl, ul)
-                self.networkLock.unlock()
-
-                let name = processName(pid)
-                let snap = ProcessSnapshot(pid: pid, name: name, cpuPercent: 0, rssBytes: 0, downloadBytes: downloadSpeed, uploadBytes: uploadSpeed)
-                snapshots.append(snap)
-            }
+            // 复用常驻 nettop 的累计数据（ProcessNetworkReader），做差分得到速率。
+            // 不再每 5 秒额外 spawn 一个 nettop（之前每次全量枚举 socket，费 CPU）。
+            let current = self.processNetworkReader.topProcesses()
+            guard !current.isEmpty else { return }
 
             self.networkLock.lock()
+            let hasBaseline = self.networkHasBaseline
+            let interval = now.timeIntervalSince(self.lastNetworkTime)
+            var speeds: [ProcessSnapshot] = []
+            for snap in current {
+                let key = "\(snap.pid)|\(snap.name)|\(snap.startTime)"
+                let dl = UInt64(snap.downloadBytes)
+                let ul = UInt64(snap.uploadBytes)
+                if hasBaseline, interval > 0, let prev = self.prevNetworkBytes[key] {
+                    let dDl = dl > prev.download ? dl - prev.download : 0
+                    let dUl = ul > prev.upload ? ul - prev.upload : 0
+                    let ds = Double(dDl) / interval
+                    let us = Double(dUl) / interval
+                    if ds > 0 || us > 0 {
+                        speeds.append(ProcessSnapshot(pid: snap.pid, name: snap.name, cpuPercent: 0, rssBytes: 0, downloadBytes: ds, uploadBytes: us, startTime: snap.startTime))
+                    }
+                }
+                self.prevNetworkBytes[key] = (startTime: snap.startTime, download: dl, upload: ul)
+            }
             self.lastNetworkTime = now
             self.networkHasBaseline = true
             self.networkLock.unlock()
 
-            let sorted = snapshots.sorted { ($0.downloadBytes + $0.uploadBytes) > ($1.downloadBytes + $1.uploadBytes) }
-            let top = Array(sorted.prefix(20))
+            let top = Array(speeds.sorted { ($0.downloadBytes + $0.uploadBytes) > ($1.downloadBytes + $1.uploadBytes) }.prefix(20))
             DispatchQueue.main.async {
                 self.topByNetwork = top
             }
         }
-    }
-
-    private func readNettop() -> [Int32: (download: UInt64, upload: UInt64)]? {
-        let task = Process()
-        task.launchPath = "/usr/bin/nettop"
-        task.arguments = ["-P", "-L", "1", "-n"]
-
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        // Readable stdin (not /dev/null) keeps nettop's -s pacing; with
-        // /dev/null stdin it samples at full speed (~120% of one core).
-        task.standardInput = Pipe()
-
-        let semaphore = DispatchSemaphore(value: 0)
-        var timedOut = false
-        var outputData: Data?
-
-        do {
-            let timeoutWork = DispatchWorkItem {
-                timedOut = true
-                task.terminate()
-                semaphore.signal()
-            }
-            task.terminationHandler = { _ in semaphore.signal() }
-            try task.run()
-            DispatchQueue.global().asyncAfter(deadline: .now() + Self.nettopTimeout, execute: timeoutWork)
-        } catch {
-            LogService.error("nettop_launch_failed", detail: error.localizedDescription)
-            return nil
-        }
-
-        semaphore.wait()
-        if timedOut {
-            LogService.error("nettop_timeout", detail: "nettop did not complete within \(Self.nettopTimeout)s")
-            return nil
-        }
-
-        outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let data = outputData, let output = String(data: data, encoding: .utf8) else { return nil }
-        return Self.parseNettopOutput(output)
     }
 
     public func stop() {
@@ -317,12 +264,4 @@ private func processName(_ pid: Int32) -> String {
         return String(cString: buf)
     }
     return "pid_\(pid)"
-}
-
-private func getProcessStartTime(_ pid: Int32) -> time_t {
-    var info = proc_bsdinfo()
-    let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-    let ret = proc_pidinfo(pid, Int32(PROC_PIDTBSDINFO), 0, &info, size)
-    guard ret == size else { return 0 }
-    return time_t(info.pbi_start_tvsec)
 }
