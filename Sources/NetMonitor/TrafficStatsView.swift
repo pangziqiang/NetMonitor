@@ -455,14 +455,61 @@ struct TrafficStatsView: View {
             stepButton(systemImage: "chevron.left", enabled: monthCanGoEarlier) {
                 shiftMonthWindow(-12)
             }
-            Text(monthRangeLabel)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(theme.textSecondary)
-                .frame(minWidth: 150)
+            Button {
+                showDateDropdown.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 11))
+                        .foregroundColor(theme.textMuted)
+                    Text(monthRangeLabel)
+                        .font(.system(size: 12))
+                        .foregroundColor(theme.textSecondary)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9))
+                        .foregroundColor(theme.textMuted)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(theme.textMuted.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showDateDropdown, arrowEdge: .top) {
+                dropdownPanel {
+                    ForEach(monthWindowOptions, id: \.start) { opt in
+                        pickerRow(label: opt.label, value: opt.start, selected: monthStartKey) {
+                            monthWindowStartStr = opt.start
+                            showDateDropdown = false
+                        }
+                    }
+                }
+            }
             stepButton(systemImage: "chevron.right", enabled: monthCanGoLater) {
                 shiftMonthWindow(+12)
             }
         }
+    }
+
+    /// 月视图下拉项：按 12 个月对齐的 24 个月窗口列表（2026-01 ~ 2027-12、2025-01 ~ 2026-12 …），与 ◀▶ 一致
+    private var monthWindowOptions: [(label: String, start: String)] {
+        let cal = Calendar.current
+        guard let defaultStart = iso8601Date(from: monthDefaultStartKey + "-01T00:00:00.000Z"),
+              let earliest = availableDateStrs.last,
+              let earliestDate = iso8601Date(from: earliest + "T00:00:00.000Z") else { return [] }
+        var options: [(String, String)] = []
+        var n = 0
+        while true {
+            guard let start = cal.date(byAdding: .month, value: -n * 12, to: defaultStart),
+                  let end = cal.date(byAdding: .month, value: 23, to: start) else { break }
+            let startKey = String(iso8601String(from: start).prefix(7))
+            let endKey = String(iso8601String(from: end).prefix(7))
+            if end < earliestDate { break }
+            options.append((label: "\(startKey) ~ \(endKey)", start: startKey))
+            n += 1
+        }
+        return options
     }
 
     private var monthDefaultStartKey: String {
