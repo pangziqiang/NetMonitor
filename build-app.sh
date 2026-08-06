@@ -76,7 +76,7 @@ cp "$PROJECT_DIR/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 
 # Code-sign with a stable local identity (self-signed). Replace with Developer ID for public distribution.
 CODESIGN_ID="NetMonitor Local Signing"
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "$CODESIGN_ID"; then
+if security find-identity -p codesigning 2>/dev/null | grep -q "$CODESIGN_ID"; then
     codesign --force --deep --sign "$CODESIGN_ID" "$APP_BUNDLE"
     echo "✅ Code-signed with $CODESIGN_ID"
 else
