@@ -45,11 +45,48 @@ enum SettingsTab: String, CaseIterable {
     }
 }
 
+enum GeneralCategory: String, CaseIterable, Identifiable {
+    case menuBar
+    case process
+    case timeWindow
+    case dock
+    case floating
+    case startup
+    case updates
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .menuBar: return L10n.tr("Menu Bar Items")
+        case .process: return L10n.tr("Process Monitor")
+        case .timeWindow: return L10n.tr("Time Window")
+        case .dock: return L10n.tr("Dock")
+        case .floating: return L10n.tr("Floating Window")
+        case .startup: return L10n.tr("Startup")
+        case .updates: return L10n.tr("Updates")
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .menuBar: return "menubar.rectangle"
+        case .process: return "app.badge"
+        case .timeWindow: return "clock"
+        case .dock: return "menubar.dock.rectangle"
+        case .floating: return "pip"
+        case .startup: return "power"
+        case .updates: return "arrow.down.circle"
+        }
+    }
+}
+
 struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var appState: AppState
     @Environment(\.colorScheme) var colorScheme
     @State private var showWarningAlert = false
+    @State private var selectedCategory: GeneralCategory = .menuBar
     var floatingWindowManager: FloatingWindowManager?
 
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
@@ -125,8 +162,70 @@ struct SettingsView: View {
     }
 
     private var generalSettings: some View {
-        VStack(spacing: Spacing.lg) {
-            settingsSection(L10n.tr("Menu Bar Items"), textColor: theme.textMuted) {
+        HStack(spacing: 0) {
+            categorySidebar
+            Divider()
+            categoryDetail
+        }
+        .alert(L10n.tr("Need Visible Element"), isPresented: $showWarningAlert) {
+            Button(L10n.tr("OK")) {}
+        } message: {
+            Text(L10n.tr("Need Visible Element Message"))
+        }
+    }
+
+    // MARK: - 通用分类侧边栏
+
+    private var categorySidebar: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(GeneralCategory.allCases) { cat in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { selectedCategory = cat }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: cat.icon)
+                            .font(.system(size: 12))
+                            .frame(width: 18)
+                        Text(cat.displayName)
+                            .font(.system(size: 12, weight: .medium))
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(selectedCategory == cat ? Color.downloadColor.opacity(0.15) : Color.clear)
+                    .foregroundColor(selectedCategory == cat ? .downloadColor : theme.textSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 8)
+        .frame(width: 150)
+    }
+
+    private var categoryDetail: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                switch selectedCategory {
+                case .menuBar: menuBarSection
+                case .process: processSection
+                case .timeWindow: timeWindowSection
+                case .dock: dockSection
+                case .floating: floatingWindowSection
+                case .startup: startupSection
+                case .updates: updatesSection
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private var menuBarSection: some View {
+        settingsSection(L10n.tr("Menu Bar Items"), textColor: theme.textMuted) {
                 ForEach(Array(settings.menuBarOrder.enumerated()), id: \.element) { idx, itemId in
                     HStack(spacing: 8) {
                         // Two separate sort buttons
@@ -179,7 +278,10 @@ struct SettingsView: View {
                 }
             }
 
-            settingsSection(L10n.tr("Process Monitor"), textColor: theme.textMuted) {
+    }
+
+    private var processSection: some View {
+        settingsSection(L10n.tr("Process Monitor"), textColor: theme.textMuted) {
                 HStack {
                     Image(systemName: "app.badge").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
                     Text(L10n.tr("Show Top Processes")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
@@ -203,7 +305,10 @@ struct SettingsView: View {
                 }
             }
 
-            settingsSection(L10n.tr("Time Window"), textColor: theme.textMuted) {
+    }
+
+    private var timeWindowSection: some View {
+        settingsSection(L10n.tr("Time Window"), textColor: theme.textMuted) {
                 HStack {
                     Image(systemName: "clock").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
                     Text(L10n.tr("Chart Time Window")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
@@ -220,7 +325,10 @@ struct SettingsView: View {
                 }
             }
 
-            settingsSection(L10n.tr("Dock"), textColor: theme.textMuted) {
+    }
+
+    private var dockSection: some View {
+        settingsSection(L10n.tr("Dock"), textColor: theme.textMuted) {
                 HStack {
                     Image(systemName: "menubar.dock.rectangle").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
                     Text(L10n.tr("Show Dock Icon")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
@@ -240,7 +348,10 @@ struct SettingsView: View {
                 }
             }
 
-            settingsSection(L10n.tr("Floating Window"), textColor: theme.textMuted) {
+    }
+
+    private var floatingWindowSection: some View {
+        settingsSection(L10n.tr("Floating Window"), textColor: theme.textMuted) {
                 HStack {
                     Image(systemName: "pip").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
                     Text(L10n.tr("Enable Floating Window")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
@@ -371,7 +482,10 @@ struct SettingsView: View {
                 }
             }
 
-            settingsSection(L10n.tr("Startup"), textColor: theme.textMuted) {
+    }
+
+    private var startupSection: some View {
+        settingsSection(L10n.tr("Startup"), textColor: theme.textMuted) {
                 HStack {
                     Image(systemName: "power").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
                     Text(L10n.tr("Launch at Login")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
@@ -388,8 +502,11 @@ struct SettingsView: View {
                     .toggleStyle(.switch).controlSize(.small).accessibilityLabel(L10n.tr("Launch at Login"))
                 }
             }
+    }
 
-            settingsSection(L10n.tr("Updates"), textColor: theme.textMuted) {
+    @ViewBuilder
+    private var updatesSection: some View {
+        settingsSection(L10n.tr("Updates"), textColor: theme.textMuted) {
                 HStack {
                     Image(systemName: "arrow.down.circle").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
                     Text("\(L10n.tr("Current Version")) \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")")
@@ -403,14 +520,7 @@ struct SettingsView: View {
                 }
             }
 
-            versionText
-
-        }
-        .alert(L10n.tr("Need Visible Element"), isPresented: $showWarningAlert) {
-            Button(L10n.tr("OK")) {}
-        } message: {
-            Text(L10n.tr("Need Visible Element Message"))
-        }
+        versionText
     }
 }
 

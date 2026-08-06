@@ -110,7 +110,7 @@ struct NetMonitorApp: App {
             SettingsView(floatingWindowManager: appDelegate.floatingWindowManager)
                 .environmentObject(appDelegate.appState)
                 .environmentObject(appDelegate.settings)
-                .frame(width: 400)
+                .frame(width: 640)
                 .background(SettingsWindowAccessor { appDelegate.setSettingsWindow($0) })
                 .onChange(of: appDelegate.appState.historySeconds) { _, n in
                     appDelegate.engine.historyMax = n
@@ -118,7 +118,7 @@ struct NetMonitorApp: App {
                 }
                 .onAppear { WindowRouter.shared.register(openWindow) }
         }
-        .defaultSize(width: 400, height: 600)
+        .defaultSize(width: 640, height: 600)
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
 
