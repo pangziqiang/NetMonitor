@@ -29,39 +29,27 @@ struct ThinScrollConfig: NSViewRepresentable {
 }
 
 enum GeneralCategory: String, CaseIterable, Identifiable {
-    case menuBar
-    case process
-    case timeWindow
-    case dock
+    case display
     case floating
-    case startup
-    case updates
+    case app
     case permissions
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .menuBar: return L10n.tr("Menu Bar Items")
-        case .process: return L10n.tr("Process Monitor")
-        case .timeWindow: return L10n.tr("Time Window")
-        case .dock: return L10n.tr("Dock")
+        case .display: return L10n.tr("Display & Charts")
         case .floating: return L10n.tr("Floating Window")
-        case .startup: return L10n.tr("Startup")
-        case .updates: return L10n.tr("Updates")
+        case .app: return L10n.tr("App")
         case .permissions: return L10n.tr("Permissions")
         }
     }
 
     var icon: String {
         switch self {
-        case .menuBar: return "menubar.rectangle"
-        case .process: return "app.badge"
-        case .timeWindow: return "clock"
-        case .dock: return "menubar.dock.rectangle"
+        case .display: return "rectangle.3.group"
         case .floating: return "pip"
-        case .startup: return "power"
-        case .updates: return "arrow.down.circle"
+        case .app: return "gearshape"
         case .permissions: return "lock.shield.fill"
         }
     }
@@ -72,7 +60,7 @@ struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.colorScheme) var colorScheme
     @State private var showWarningAlert = false
-    @State private var selectedCategory: GeneralCategory = .menuBar
+    @State private var selectedCategory: GeneralCategory = .display
     var floatingWindowManager: FloatingWindowManager?
 
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
@@ -154,18 +142,32 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.lg) {
                 switch selectedCategory {
-                case .menuBar: menuBarSection
-                case .process: processSection
-                case .timeWindow: timeWindowSection
-                case .dock: dockSection
+                case .display: displaySection
                 case .floating: floatingWindowSection
-                case .startup: startupSection
-                case .updates: updatesSection
+                case .app: appSection
                 case .permissions: PermissionsView()
                 }
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+
+    @ViewBuilder
+    private var displaySection: some View {
+        VStack(spacing: Spacing.lg) {
+            menuBarSection
+            processSection
+            timeWindowSection
+        }
+    }
+
+    @ViewBuilder
+    private var appSection: some View {
+        VStack(spacing: Spacing.lg) {
+            dockSection
+            startupSection
+            updatesSection
         }
     }
 

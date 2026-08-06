@@ -39,6 +39,8 @@ public enum L10n {
         "Current Speed": "当前速度",
         "Today Traffic": "今日流量汇总",
         "General": "通用",
+        "Display & Charts": "显示与图表",
+        "App": "应用",
         "Startup": "启动",
         "Launch at Login": "开机自启",
         "Updates": "更新",
