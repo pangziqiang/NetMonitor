@@ -1,5 +1,5 @@
 cask "netmonitor" do
-  version "1.11.1"
+  version "1.12.0"
   sha256 :no_check  # replace with actual SHA after first release
 
   url "https://github.com/pangziqiang/NetMonitor/releases/download/v#{version}/NetMonitor-#{version}.dmg"
