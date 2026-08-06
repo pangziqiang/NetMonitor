@@ -140,9 +140,8 @@ public class ProcessMonitor: ObservableObject {
                     let dUl = ul > prev.upload ? ul - prev.upload : 0
                     let ds = Double(dDl) / interval
                     let us = Double(dUl) / interval
-                    if ds > 0 || us > 0 {
-                        speeds.append(ProcessSnapshot(pid: snap.pid, name: snap.name, cpuPercent: 0, rssBytes: 0, downloadBytes: ds, uploadBytes: us, startTime: snap.startTime))
-                    }
+                    // 始终列出（空闲进程速度为 0），避免"按网络"列表时有时无
+                    speeds.append(ProcessSnapshot(pid: snap.pid, name: snap.name, cpuPercent: 0, rssBytes: 0, downloadBytes: ds, uploadBytes: us, startTime: snap.startTime))
                 }
                 self.prevNetworkBytes[key] = (startTime: snap.startTime, download: dl, upload: ul)
             }
