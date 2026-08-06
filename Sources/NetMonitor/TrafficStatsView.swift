@@ -77,7 +77,8 @@ struct TrafficStatsView: View {
             controlBar
             scrollContent
         }
-        .frame(minWidth: cfg.pW, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
+        // 固定高度：完整显示统计栏 + 下载/上传两个图表，初始无需滚动
+        .frame(width: cfg.pW, height: 760)
         .background(theme.appBg)
         .onAppear {
             refreshTimer?.invalidate()
