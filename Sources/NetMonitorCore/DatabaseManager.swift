@@ -826,62 +826,6 @@ public class DatabaseManager {
 
     /// Aggregate top processes from traffic_minutely.top_processes JSON for a given time range.
     /// Returns data consistent with bar chart totals (same source).
-    public func topProcessesFromMinutely(from: Date, to: Date, limit: Int = 20) -> [(name: String, down: UInt64, up: UInt64)] {
-        let fromStr = iso8601String(from: from)
-        let toStr = iso8601String(from: to)
-        guard let rdb = readDb else { return [] }
-        var stmt: OpaquePointer?
-        let sql = "SELECT top_processes, bytes_down, bytes_up FROM traffic_minutely WHERE timestamp >= ? AND timestamp <= ? AND top_processes IS NOT NULL"
-        guard sqlite3_prepare_v2(rdb, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
-        defer { sqlite3_finalize(stmt) }
-        sqlite3_bind_text(stmt, 1, fromStr, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(stmt, 2, toStr, -1, SQLITE_TRANSIENT)
-        // Aggregate: for each minute, parse top_processes JSON and distribute minute's bytes proportionally
-        var processTotals: [String: (down: UInt64, up: UInt64)] = [:]
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            guard let jsonPtr = sqlite3_column_text(stmt, 0) else { continue }
-            let minuteDown = UInt64(sqlite3_column_int64(stmt, 1))
-            let minuteUp = UInt64(sqlite3_column_int64(stmt, 2))
-            let jsonStr = String(cString: jsonPtr)
-            guard let jsonData = jsonStr.data(using: .utf8),
-                  let arr = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] else { continue }
-            // Sum speeds from top processes for proportional distribution
-            var totalSpeed: Double = 0
-            var procSpeeds: [(name: String, speedDown: Double, speedUp: Double)] = []
-            for dict in arr {
-                // Support both old ("name"/"down"/"up") and new ("n"/"d"/"u") JSON keys
-                guard let name = (dict["name"] ?? dict["n"]) as? String else { continue }
-                let spdD = ((dict["down"] ?? dict["d"]) as? Double) ?? ((dict["down"] ?? dict["d"]) as? Int64).map(Double.init) ?? 0
-                let spdU = ((dict["up"] ?? dict["u"]) as? Double) ?? ((dict["up"] ?? dict["u"]) as? Int64).map(Double.init) ?? 0
-                totalSpeed += spdD + spdU
-                procSpeeds.append((name, spdD, spdU))
-            }
-            guard totalSpeed > 0 else { continue }
-            // Calculate separate download/upload speed totals for proportional distribution
-            var totalSpeedDown: Double = 0
-            var totalSpeedUp: Double = 0
-            for (_, spdD, spdU) in procSpeeds {
-                totalSpeedDown += spdD
-                totalSpeedUp += spdU
-            }
-            // Distribute minute's actual bytes proportionally to each process's speed share
-            for (name, spdD, spdU) in procSpeeds {
-                let shareDown = totalSpeedDown > 0 ? spdD / totalSpeedDown : 0
-                let shareUp = totalSpeedUp > 0 ? spdU / totalSpeedUp : 0
-                let pDown = UInt64(Double(minuteDown) * shareDown)
-                let pUp = UInt64(Double(minuteUp) * shareUp)
-                var existing = processTotals[name] ?? (0, 0)
-                existing.down += pDown
-                existing.up += pUp
-                processTotals[name] = existing
-            }
-        }
-        return processTotals
-            .sorted { ($0.value.down + $0.value.up) > ($1.value.down + $1.value.up) }
-            .prefix(limit)
-            .map { (name: $0.key, down: $0.value.down, up: $0.value.up) }
-    }
-
     public func exportDailyCSV(from: Date, to: Date) -> String {
         let data = dailyTraffic(from: from, to: to)
         var csv = Self.csvBOM

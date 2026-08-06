@@ -710,7 +710,10 @@ struct TrafficStatsView: View {
             detailBarDown = page?.dn[index] ?? 0
             detailBarUp = page?.up[index] ?? 0
         }
-        let processes = db.topProcessesFromMinutely(from: s, to: e, limit: 20)
+        // 用真实入库的 process_traffic（每 60s 按进程差分写入），替代旧的
+        // top-3 速度占比估算（后者只在 popover 打开时写入且只含前 3 进程，误差大）
+        let processes = db.processTrafficSummary(from: s, to: e, limit: 20)
+            .map { (name: $0.name, down: $0.down, up: $0.up) }
         // Sort processes by the active type (download or upload)
         if type == .download {
             detailProcesses = processes.sorted { $0.down > $1.down }
