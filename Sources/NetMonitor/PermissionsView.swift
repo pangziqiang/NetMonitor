@@ -5,6 +5,7 @@ import AppKit
 struct PermissionsView: View {
     @State private var hardware: HardwareInfo?
     @State private var isMonitoring = true  // engine always active while app runs
+    @State private var accessibilityGranted = AXIsProcessTrusted()
     @EnvironmentObject var settings: AppSettings
     @Environment(\.colorScheme) var colorScheme
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
@@ -36,10 +37,16 @@ struct PermissionsView: View {
                     granted: isMonitoring
                 )
                 permissionRow(
-                    icon: "pip", name: L10n.tr("Floating Window"),
-                    description: L10n.tr("Floating Window Desc"),
-                    granted: settings.showFloatingWindow
+                    icon: "app.badge", name: L10n.tr("Process Monitor"),
+                    description: L10n.tr("Process Monitor Desc"),
+                    granted: true
                 )
+                permissionRow(
+                    icon: "thermometer", name: L10n.tr("Temperature"),
+                    description: L10n.tr("Temperature Desc"),
+                    granted: true
+                )
+                accessibilityRow
             }
 
             settingsSection(L10n.tr("Diagnostics"), textColor: theme.textMuted) {
@@ -59,6 +66,7 @@ struct PermissionsView: View {
             }
         }
         .onAppear {
+            accessibilityGranted = AXIsProcessTrusted()
             DispatchQueue.global(qos: .userInitiated).async {
                 let info = HardwareInfo.load()
                 DispatchQueue.main.async {
@@ -66,6 +74,35 @@ struct PermissionsView: View {
                 }
             }
         }
+    }
+
+    private var accessibilityRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "accessibility")
+                .font(.system(size: 12))
+                .foregroundColor(accessibilityGranted ? .statusActive : theme.textMuted)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(L10n.tr("Accessibility")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                Text(L10n.tr("Accessibility Desc")).font(.system(size: 10)).foregroundColor(theme.textMuted)
+            }
+            Spacer()
+            if accessibilityGranted {
+                HStack(spacing: 6) {
+                    Circle().fill(Color.statusActive).frame(width: 7, height: 7)
+                    Text(L10n.tr("Authorized")).font(.system(size: 10, design: .monospaced)).foregroundColor(.statusActive)
+                }
+            } else {
+                Button(L10n.tr("Grant")) {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     private func hardwareRow(icon: String, name: String, value: String) -> some View {
