@@ -139,6 +139,9 @@ class StatusItemManager: NSObject {
             PopoverManager.shared.hasMoved = false
             panel.setFrame(NSRect(x: x, y: y, width: panelW, height: panelH), display: true)
             panel.makeKeyAndOrderFront(nil)
+            // makeKeyAndOrderFront 不会再次触发 SwiftUI onAppear（视图一直在层级里），
+            // 必须在这里显式恢复进程监控，否则关闭再打开后列表冻结。
+            system.processMonitor.isActive = true
             NSApp.activate()
         }
     }
