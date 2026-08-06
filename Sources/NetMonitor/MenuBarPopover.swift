@@ -377,7 +377,6 @@ struct MenuBarPopover: View {
             .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.sm)
             .contentShape(Rectangle())
             .onTapGesture(count: 2) {
-                appState.settingsTab = .general
                 openWindow(id: "settings")
                 NSApp.activate()
             }

@@ -44,12 +44,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     WindowRouter.shared.open(id: "trafficStats")
                     NSApp.activate()
                 } else {
-                    self.appState.settingsTab = .general
                     WindowRouter.shared.open(id: "settings")
                     NSApp.activate()
                 }
             }, onOpenSettings: { [weak self] in
-                self?.appState.settingsTab = .general
                 WindowRouter.shared.open(id: "settings")
                 NSApp.activate()
             })

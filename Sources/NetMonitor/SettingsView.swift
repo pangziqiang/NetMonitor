@@ -28,23 +28,6 @@ struct ThinScrollConfig: NSViewRepresentable {
     func updateNSView(_: NSView, context: Context) {}
 }
 
-enum SettingsTab: String, CaseIterable {
-    case general
-    case permissions
-    var displayName: String {
-        switch self {
-        case .general: return L10n.tr("General")
-        case .permissions: return L10n.tr("Permissions")
-        }
-    }
-    var icon: String {
-        switch self {
-        case .general: return "gearshape.fill"
-        case .permissions: return "lock.shield.fill"
-        }
-    }
-}
-
 enum GeneralCategory: String, CaseIterable, Identifiable {
     case menuBar
     case process
@@ -53,6 +36,7 @@ enum GeneralCategory: String, CaseIterable, Identifiable {
     case floating
     case startup
     case updates
+    case permissions
 
     var id: String { rawValue }
 
@@ -65,6 +49,7 @@ enum GeneralCategory: String, CaseIterable, Identifiable {
         case .floating: return L10n.tr("Floating Window")
         case .startup: return L10n.tr("Startup")
         case .updates: return L10n.tr("Updates")
+        case .permissions: return L10n.tr("Permissions")
         }
     }
 
@@ -77,6 +62,7 @@ enum GeneralCategory: String, CaseIterable, Identifiable {
         case .floating: return "pip"
         case .startup: return "power"
         case .updates: return "arrow.down.circle"
+        case .permissions: return "lock.shield.fill"
         }
     }
 }
@@ -115,50 +101,8 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            settingsTabBar.padding(.top, 20).padding(.horizontal, 20)
-            if appState.settingsTab == .general {
-                VStack(alignment: .leading, spacing: 0) {
-                    generalSettings
-                }
-                .padding(.horizontal, 20).padding(.bottom, 20)
-                .padding(.top, Spacing.md)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    PermissionsView()
-                }
-                .padding(.horizontal, 20).padding(.bottom, 20)
-                .padding(.top, Spacing.md)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
-        }
+        generalSettings
         .background(theme.appBg)
-    }
-
-    private var settingsTabBar: some View {
-        HStack(spacing: 0) {
-            ForEach(SettingsTab.allCases, id: \.self) { tab in
-                let isSelected = appState.settingsTab == tab
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) { appState.settingsTab = tab }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: tab.icon).font(.system(size: 12))
-                        Text(tab.displayName).font(.system(size: 12, weight: .medium))
-                    }
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(isSelected ? Color.downloadColor.opacity(0.15) : Color.clear)
-                    .foregroundColor(isSelected ? .downloadColor : theme.textSecondary)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
-                .accessibilityLabel(tab.displayName)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-            Spacer()
-        }
     }
 
     private var generalSettings: some View {
@@ -217,6 +161,7 @@ struct SettingsView: View {
                 case .floating: floatingWindowSection
                 case .startup: startupSection
                 case .updates: updatesSection
+                case .permissions: PermissionsView()
                 }
             }
             .padding(20)
