@@ -137,10 +137,12 @@ public final class SystemMonitor: ObservableObject, @unchecked Sendable {
     // CPU
     @Published public var cpuUsage: Double = 0
     @Published public var cpuHistory: [Double] = []
+    @Published public var cpuHistoryTimes: [Date] = []
 
     // GPU
     @Published public var gpuUsage: Double = 0
     @Published public var gpuHistory: [Double] = []
+    @Published public var gpuHistoryTimes: [Date] = []
     @Published public var gpuVRAMUsed: UInt64 = 0
     @Published public var gpuVRAMTotal: UInt64 = 0
     @Published public var gpuRenderUtil: Double = 0
@@ -153,6 +155,7 @@ public final class SystemMonitor: ObservableObject, @unchecked Sendable {
     @Published public var memoryTotal: UInt64 = 0
     @Published public var memoryUsage: Double = 0
     @Published public var memoryHistory: [Double] = []
+    @Published public var memoryHistoryTimes: [Date] = []
     @Published public var memoryWired: UInt64 = 0
     @Published public var memoryActive: UInt64 = 0
     @Published public var memoryCompressed: UInt64 = 0
@@ -281,7 +284,9 @@ public final class SystemMonitor: ObservableObject, @unchecked Sendable {
                 if !self.useIOReportCPU {
                     self.cpuUsage = cpu
                     self.cpuHistory.append(cpu)
+                    self.cpuHistoryTimes.append(Date())
                     if self.cpuHistory.count > self.historyMax { self.cpuHistory.removeFirst() }
+                    if self.cpuHistoryTimes.count > self.historyMax { self.cpuHistoryTimes.removeFirst() }
                 }
 
                 if let gpu = self.cachedGPU {
@@ -298,7 +303,9 @@ public final class SystemMonitor: ObservableObject, @unchecked Sendable {
                 }
                 // When cachedGPU is nil (async read pending), keep previous GPU values
                 self.gpuHistory.append(self.gpuUsage)
+                self.gpuHistoryTimes.append(Date())
                 if self.gpuHistory.count > self.historyMax { self.gpuHistory.removeFirst() }
+                if self.gpuHistoryTimes.count > self.historyMax { self.gpuHistoryTimes.removeFirst() }
 
                 self.memoryUsed = mem.used
                 self.memoryTotal = mem.total
@@ -310,7 +317,9 @@ public final class SystemMonitor: ObservableObject, @unchecked Sendable {
                 let pct = mem.total > 0 ? Double(mem.used) / Double(mem.total) * 100 : 0
                 self.memoryUsage = pct
                 self.memoryHistory.append(pct)
+                self.memoryHistoryTimes.append(Date())
                 if self.memoryHistory.count > self.historyMax { self.memoryHistory.removeFirst() }
+                if self.memoryHistoryTimes.count > self.historyMax { self.memoryHistoryTimes.removeFirst() }
 
                 // Temperature — already read on background thread
                 self.cpuTemperatureHistory.append(atm.cpu ?? self.cpuTemperatureHistory.last ?? Double.nan)
@@ -364,8 +373,12 @@ public final class SystemMonitor: ObservableObject, @unchecked Sendable {
                 DispatchQueue.main.async {
                     self.cpuUsage = pct
                     self.cpuHistory.append(pct)
+                    self.cpuHistoryTimes.append(Date())
                     if self.cpuHistory.count > self.historyMax {
                         self.cpuHistory.removeFirst()
+                    }
+                    if self.cpuHistoryTimes.count > self.historyMax {
+                        self.cpuHistoryTimes.removeFirst()
                     }
                 }
             } else if channelName.contains("cpu_idle") {

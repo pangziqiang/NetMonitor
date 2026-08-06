@@ -282,11 +282,11 @@ struct MenuBarPopover: View {
 
             VStack(spacing: 16) {
                 systemRow(label: "CPU", usage: String(format: "%.1f%%", system.cpuUsage),
-                          color: .cpuColor, data: system.cpuHistory, temp: system.thermal.cpuTemperature)
+                          color: .cpuColor, data: system.cpuHistory, times: system.cpuHistoryTimes, temp: system.thermal.cpuTemperature)
                 systemRow(label: "GPU", usage: String(format: "%.1f%%", system.gpuUsage),
-                          color: .gpuColor, data: system.gpuHistory, temp: system.thermal.gpuTemperature)
+                          color: .gpuColor, data: system.gpuHistory, times: system.gpuHistoryTimes, temp: system.thermal.gpuTemperature)
                 systemRow(label: "MEM", usage: String(format: "%.1f%%", system.memoryUsage),
-                          color: .memoryColor, data: system.memoryHistory, temp: system.thermal.memoryTemperature)
+                          color: .memoryColor, data: system.memoryHistory, times: system.memoryHistoryTimes, temp: system.thermal.memoryTemperature)
             }
             .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.sm)
         }
@@ -327,7 +327,7 @@ struct MenuBarPopover: View {
         )
     }
 
-    private func systemRow(label: String, usage: String, color: Color, data: [Double], temp: Double?) -> some View {
+    private func systemRow(label: String, usage: String, color: Color, data: [Double], times: [Date], temp: Double?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 tempThermometer(value: temp, color: color)
@@ -337,7 +337,7 @@ struct MenuBarPopover: View {
                     Text(usage).font(.system(size: 11, design: .monospaced)).foregroundColor(color)
                 }
             }
-            MiniSparkLine(data: data, times: [], color: color, showAxis: false, showPeak: true, fixedMax: 100)
+            MiniSparkLine(data: data, times: times, color: color, showAxis: false, showPeak: true, fixedMax: 100)
                 .frame(maxWidth: .infinity)
                 .frame(height: 60)
         }
