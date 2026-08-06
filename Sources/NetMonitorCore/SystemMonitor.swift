@@ -439,7 +439,12 @@ public final class SystemMonitor: ObservableObject, @unchecked Sendable {
         let compressed = UInt64(vmInfo.compressor_page_count) * page
         let free = UInt64(vmInfo.free_count) * page
         let inactive = UInt64(vmInfo.inactive_count) * page
-        let used = wired + active + compressed
+        let speculative = UInt64(vmInfo.speculative_count) * page
+        let purgeable = UInt64(vmInfo.purgeable_count) * page
+        let external = UInt64(vmInfo.external_page_count) * page
+        // 与 Stats / HagimiMonitor 口径一致：物理占用 = active + inactive + speculative
+        // + wired + compressed - purgeable - external（比活动监视器的 w+a+c 多计 inactive）
+        let used = max(0, active + inactive + speculative + wired + compressed - purgeable - external)
         return (used, total, wired, active, compressed, free, inactive)
     }
 }
