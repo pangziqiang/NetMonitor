@@ -149,8 +149,6 @@ struct NetMonitorApp: App {
                     .keyboardShortcut(",", modifiers: .command)
                 Button(L10n.tr("Traffic Stats…")) { openWindow(id: "trafficStats"); NSApp.activate() }
                     .keyboardShortcut("t", modifiers: .command)
-                Button(L10n.tr("Processes & Connections")) { openWindow(id: "processesConnections"); NSApp.activate() }
-                    .keyboardShortcut("p", modifiers: [.command, .shift])
             }
             CommandGroup(after: .appSettings) {}
             CommandGroup(replacing: .undoRedo) {
@@ -198,16 +196,6 @@ struct NetMonitorApp: App {
                 .onAppear { WindowRouter.shared.register(openWindow) }
         }
         .defaultSize(width: 1320, height: 760)
-        .windowResizability(.contentSize)
-        .windowStyle(.hiddenTitleBar)
-
-        Window(L10n.tr("Processes & Connections"), id: "processesConnections") {
-            ProcessConnectionsView(system: appDelegate.system)
-                .environmentObject(appDelegate.appState)
-                .environmentObject(appDelegate.settings)
-                .onAppear { WindowRouter.shared.register(openWindow) }
-        }
-        .defaultSize(width: 760, height: 540)
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
     }
