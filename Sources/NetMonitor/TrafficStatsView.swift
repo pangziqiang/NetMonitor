@@ -60,6 +60,12 @@ struct TrafficStatsView: View {
     @State private var dayArrowStep = 24
     /// 月视图窗口起点（YYYY-MM）；空 = 当年 1 月
     @State private var monthWindowStartStr = ""
+    /// 进程流量历史 sheet
+    @State private var showProcessHistory = false
+    @State private var processHistory: [(pid: Int32, name: String, down: UInt64, up: UInt64)] = []
+    @State private var historyRangeLabel = ""
+    @State private var selectedProcess: (pid: Int32, name: String)?
+    @State private var processDaily: [(day: String, down: UInt64, up: UInt64)] = []
     /// 页面数据指纹：数据未变化时跳过整页重建/重绘（避免 3 秒定时器空转）
     @State private var lastPageFingerprint = -1
     /// 自定义日期下拉面板（替代系统 Picker 菜单，避免选中早期日期时菜单向上弹出被遮挡）
@@ -93,6 +99,9 @@ struct TrafficStatsView: View {
         .onChange(of: monthWindowStartStr) { _, _ in if timeRange == .month { loadData() } }
         .sheet(isPresented: $showDetailSheet) {
             processDetailSheet
+        }
+        .sheet(isPresented: $showProcessHistory) {
+            processHistorySheet
         }
     }
 
@@ -153,6 +162,22 @@ struct TrafficStatsView: View {
             }
 
             Spacer()
+
+            Button {
+                openProcessHistory()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "app.badge").font(.system(size: 11))
+                    Text(L10n.tr("Process Traffic History")).font(.system(size: 11))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(theme.textMuted.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .foregroundColor(theme.textSecondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
@@ -702,6 +727,149 @@ struct TrafficStatsView: View {
         }
         if dayWindowEndStr.isEmpty {
             dayWindowEndStr = todayStr
+        }
+    }
+
+    // MARK: - 进程流量历史（process_traffic 明细）
+
+    private var processHistorySheet: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(L10n.tr("Process Traffic History"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(theme.textPrimary)
+                Text(historyRangeLabel)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(theme.textMuted)
+                Spacer()
+                Button(L10n.tr("Close")) { showProcessHistory = false }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+
+            if let sel = selectedProcess {
+                HStack(spacing: 8) {
+                    Text(sel.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.downloadColor)
+                    Text(L10n.tr("Daily Breakdown"))
+                        .font(.system(size: 10))
+                        .foregroundColor(theme.textMuted)
+                    Spacer()
+                    Button {
+                        selectedProcess = nil
+                        processDaily = []
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(theme.textMuted.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
+                }
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(processDaily, id: \.day) { row in
+                            HStack {
+                                Text(row.day)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(theme.textSecondary)
+                                    .frame(width: 90, alignment: .leading)
+                                Text("↓ \(formatBytes(row.down, dataUnit: settings.dataUnit))")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.downloadColor)
+                                Spacer()
+                                Text("↑ \(formatBytes(row.up, dataUnit: settings.dataUnit))")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.uploadColor)
+                            }
+                        }
+                        if processDaily.isEmpty {
+                            Text(L10n.tr("No Data"))
+                                .font(.system(size: 11))
+                                .foregroundColor(theme.textMuted)
+                                .padding(.vertical, 6)
+                        }
+                    }
+                }
+                .frame(maxHeight: 180)
+                Divider()
+            }
+
+            ScrollView {
+                VStack(spacing: 2) {
+                    ForEach(Array(processHistory.enumerated()), id: \.offset) { _, row in
+                        Button {
+                            selectProcess(row)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(row.name)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(theme.textSecondary)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text("↓ \(formatBytes(row.down, dataUnit: settings.dataUnit))")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.downloadColor)
+                                Text("↑ \(formatBytes(row.up, dataUnit: settings.dataUnit))")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.uploadColor)
+                            }
+                            .padding(.vertical, 3)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if processHistory.isEmpty {
+                        Text(L10n.tr("No Data"))
+                            .font(.system(size: 11))
+                            .foregroundColor(theme.textMuted)
+                            .padding(.vertical, 8)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(width: 540, height: 480)
+        .background(theme.appBg)
+    }
+
+    private func openProcessHistory() {
+        guard let (from, to) = currentHistoryRange(),
+              let db = DatabaseManager.shared else { return }
+        processHistory = db.processTrafficSummary(from: from, to: to, limit: 30)
+        selectedProcess = nil
+        processDaily = []
+        let f = Self.cachedDateFormatter.string(from: from)
+        let t = Self.cachedDateFormatter.string(from: to)
+        historyRangeLabel = "\(f) ~ \(t)"
+        showProcessHistory = true
+    }
+
+    private func selectProcess(_ row: (pid: Int32, name: String, down: UInt64, up: UInt64)) {
+        guard let (from, to) = currentHistoryRange(),
+              let db = DatabaseManager.shared else { return }
+        selectedProcess = (row.pid, row.name)
+        processDaily = db.processTrafficDaily(pid: row.pid, name: row.name, from: from, to: to)
+    }
+
+    private func currentHistoryRange() -> (Date, Date)? {
+        let cal = Calendar.current
+        switch timeRange {
+        case .hour:
+            guard !selectedDateStr.isEmpty,
+                  let d = iso8601Date(from: selectedDateStr + "T00:00:00.000Z"),
+                  let end = cal.date(byAdding: .day, value: 1, to: d) else { return nil }
+            return (d, end)
+        case .day:
+            guard let first = dayDates.first, let last = dayDates.last,
+                  let f = iso8601Date(from: first + "T00:00:00.000Z"),
+                  let l = iso8601Date(from: last + "T00:00:00.000Z"),
+                  let end = cal.date(byAdding: .day, value: 1, to: l) else { return nil }
+            return (f, end)
+        case .month:
+            guard let s = iso8601Date(from: monthStartKey + "-01T00:00:00.000Z"),
+                  let e = cal.date(byAdding: .month, value: 24, to: s) else { return nil }
+            return (s, e)
         }
     }
 

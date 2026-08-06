@@ -29,6 +29,8 @@ final class ProcessNetworkReader {
         var totalDown: UInt64 = 0
         var totalUp: UInt64 = 0
         var lastFlushMinute: String = ""
+        var flushedDown: UInt64 = 0
+        var flushedUp: UInt64 = 0
     }
     private var accumulators: [String: Accumulator] = [:]
     // For ProcessMonitor to consume instead of running its own nettop
@@ -110,6 +112,7 @@ final class ProcessNetworkReader {
 
         let reader = pipe.fileHandleForReading
         var buffer = Data()
+        var lastFlushDate = Date()
 
         while !isStopping {
             let available = reader.availableData
@@ -124,6 +127,10 @@ final class ProcessNetworkReader {
                     parseLine(line)
                 }
                 }
+            }
+            if Date().timeIntervalSince(lastFlushDate) >= 60 {
+                flushAccumulatorsToDB()
+                lastFlushDate = Date()
             }
         }
 
@@ -199,5 +206,27 @@ final class ProcessNetworkReader {
         let result = sysctl(&mib, 4, &info, &size, nil, 0)
         guard result == 0 else { return 0 }
         return time_t(info.kp_proc.p_starttime.tv_sec)
+    }
+
+    /// 把累计的进程流量按分钟差值写入 process_traffic（历史明细数据源）。
+    private func flushAccumulatorsToDB() {
+        typealias Entry = (pid: Int32, name: String, startTime: time_t, down: UInt64, up: UInt64)
+        var entries: [Entry] = []
+        accumLock.lock()
+        for (key, acc) in accumulators {
+            let down = acc.totalDown > acc.flushedDown ? acc.totalDown - acc.flushedDown : 0
+            let up = acc.totalUp > acc.flushedUp ? acc.totalUp - acc.flushedUp : 0
+            guard down > 0 || up > 0 else { continue }
+            let parts = key.split(separator: "|", maxSplits: 2)
+            guard parts.count >= 3, let pid = Int32(parts[0]), let startTime = time_t(parts[2]) else { continue }
+            entries.append((pid, String(parts[1]), startTime, down, up))
+            accumulators[key]?.flushedDown = acc.totalDown
+            accumulators[key]?.flushedUp = acc.totalUp
+        }
+        accumLock.unlock()
+
+        for e in entries {
+            DatabaseManager.shared?.accumulateProcessTraffic(pid: e.pid, name: e.name, startTime: e.startTime, down: e.down, up: e.up)
+        }
     }
 }

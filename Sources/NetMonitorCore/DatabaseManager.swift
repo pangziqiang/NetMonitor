@@ -1228,6 +1228,64 @@ public class DatabaseManager {
         return result
     }
 
+    /// 指定时间范围内各进程的累计流量（按 pid+name 分组）。
+    public func processTrafficSummary(from: Date, to: Date, limit: Int = 30) -> [(pid: Int32, name: String, down: UInt64, up: UInt64)] {
+        guard let rdb = readDb else { return [] }
+        let fromStr = iso8601String(from: from)
+        let toStr = iso8601String(from: to)
+        var stmt: OpaquePointer?
+        let sql = """
+            SELECT pid, name, SUM(bytes_down), SUM(bytes_up)
+            FROM process_traffic
+            WHERE minute >= ? AND minute < ?
+            GROUP BY pid, name
+            ORDER BY (SUM(bytes_down) + SUM(bytes_up)) DESC
+            LIMIT ?
+        """
+        guard sqlite3_prepare_v2(rdb, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, fromStr, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, toStr, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int(stmt, 3, Int32(max(1, min(limit, 200))))
+        var result: [(Int32, String, UInt64, UInt64)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let pid = sqlite3_column_int(stmt, 0)
+            let name = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? "?"
+            let down = UInt64(sqlite3_column_int64(stmt, 2))
+            let up = UInt64(sqlite3_column_int64(stmt, 3))
+            result.append((pid, name, down, up))
+        }
+        return result
+    }
+
+    /// 单个进程在时间范围内的按天汇总。
+    public func processTrafficDaily(pid: Int32, name: String, from: Date, to: Date) -> [(day: String, down: UInt64, up: UInt64)] {
+        guard let rdb = readDb else { return [] }
+        let fromStr = iso8601String(from: from)
+        let toStr = iso8601String(from: to)
+        var stmt: OpaquePointer?
+        let sql = """
+            SELECT SUBSTR(minute, 1, 10) AS day, SUM(bytes_down), SUM(bytes_up)
+            FROM process_traffic
+            WHERE pid = ? AND name = ? AND minute >= ? AND minute < ?
+            GROUP BY day ORDER BY day ASC
+        """
+        guard sqlite3_prepare_v2(rdb, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int(stmt, 1, pid)
+        sqlite3_bind_text(stmt, 2, name, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 3, fromStr, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 4, toStr, -1, SQLITE_TRANSIENT)
+        var result: [(String, UInt64, UInt64)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let day = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? "?"
+            let down = UInt64(sqlite3_column_int64(stmt, 1))
+            let up = UInt64(sqlite3_column_int64(stmt, 2))
+            result.append((day, down, up))
+        }
+        return result
+    }
+
     private func _insertEvent(ts: String, category: String, event: String, detail: String?) {
         guard let db else { return }
         var stmt: OpaquePointer?

@@ -77,6 +77,7 @@ public enum L10n {
         "Total Download": "总下载",
         "Total Upload": "总上传",
         "Daily Breakdown": "每日明细",
+        "Process Traffic History": "进程流量历史",
         "No Data": "暂无历史数据",
         "Current Device": "当前设备",
         "Apple Silicon": "Apple Silicon (M 系列)",
