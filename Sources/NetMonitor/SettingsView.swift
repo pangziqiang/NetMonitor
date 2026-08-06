@@ -427,6 +427,35 @@ struct SettingsView: View {
                     .disabled(!settings.showFloatingWindow)
                     .opacity(settings.showFloatingWindow ? 1.0 : 0.4)
                 }
+                HStack {
+                    Image(systemName: "thermometer").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
+                    Text(L10n.tr("Show Temperature")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                    Spacer()
+                    Toggle("", isOn: $settings.floatShowTemp)
+                        .toggleStyle(.switch).controlSize(.small)
+                        .accessibilityLabel(L10n.tr("Show Temperature"))
+                        .disabled(!settings.showFloatingWindow)
+                        .opacity(settings.showFloatingWindow ? 1.0 : 0.4)
+                }
+                HStack {
+                    Image(systemName: "square.dashed").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
+                    Text(L10n.tr("Show Border")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                    Spacer()
+                    Toggle("", isOn: $settings.floatShowBorder)
+                        .toggleStyle(.switch).controlSize(.small)
+                        .accessibilityLabel(L10n.tr("Show Border"))
+                        .disabled(!settings.showFloatingWindow)
+                        .opacity(settings.showFloatingWindow ? 1.0 : 0.4)
+                }
+                HStack {
+                    Image(systemName: "circle.lefthalf.filled").font(.system(size: 12)).foregroundColor(theme.textMuted).frame(width: 20)
+                    Text(L10n.tr("Opacity")).font(.system(size: 12)).foregroundColor(theme.textSecondary)
+                    Spacer()
+                    Slider(value: $settings.floatOpacity, in: 0.3...1.0)
+                        .frame(width: 140)
+                        .disabled(!settings.showFloatingWindow)
+                        .opacity(settings.showFloatingWindow ? 1.0 : 0.4)
+                }
             }
 
     }

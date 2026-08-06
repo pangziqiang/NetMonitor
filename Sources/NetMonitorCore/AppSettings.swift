@@ -151,6 +151,15 @@ public class AppSettings: ObservableObject {
     @Published public var floatShowMemory: Bool = true {
         didSet { if !isLoadingDefaults { userDefaults.set(floatShowMemory, forKey: "floatShowMemory") } }
     }
+    @Published public var floatShowTemp: Bool = true {
+        didSet { if !isLoadingDefaults { userDefaults.set(floatShowTemp, forKey: "floatShowTemp") } }
+    }
+    @Published public var floatShowBorder: Bool = false {
+        didSet { if !isLoadingDefaults { userDefaults.set(floatShowBorder, forKey: "floatShowBorder") } }
+    }
+    @Published public var floatOpacity: Double = 0.85 {
+        didSet { if !isLoadingDefaults { userDefaults.set(floatOpacity, forKey: "floatOpacity") } }
+    }
     @Published public var floatDoubleClickActionRaw: String = FloatDoubleClickAction.settings.rawValue {
         didSet { if !isLoadingDefaults { userDefaults.set(floatDoubleClickActionRaw, forKey: "floatDoubleClickAction") } }
     }
@@ -187,6 +196,9 @@ public class AppSettings: ObservableObject {
             "floatShowCPU": true,
             "floatShowGPU": true,
             "floatShowMemory": true,
+            "floatShowTemp": true,
+            "floatShowBorder": false,
+            "floatOpacity": 0.85,
             "menuShowSpeed": true,
             "menuShowDailyTraffic": false,
             "menuShowCPU": false,
@@ -239,6 +251,10 @@ public class AppSettings: ObservableObject {
         floatShowCPU = userDefaults.bool(forKey: "floatShowCPU")
         floatShowGPU = userDefaults.bool(forKey: "floatShowGPU")
         floatShowMemory = userDefaults.bool(forKey: "floatShowMemory")
+        floatShowTemp = userDefaults.bool(forKey: "floatShowTemp")
+        floatShowBorder = userDefaults.bool(forKey: "floatShowBorder")
+        let opacity = userDefaults.double(forKey: "floatOpacity")
+        floatOpacity = opacity > 0 ? min(max(opacity, 0.3), 1.0) : 0.85
         if let stored = userDefaults.string(forKey: "floatDoubleClickAction"),
            FloatDoubleClickAction(rawValue: stored) != nil {
             floatDoubleClickActionRaw = stored

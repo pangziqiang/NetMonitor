@@ -87,6 +87,9 @@ class FloatingWindowManager {
         view.showCPU = settings.floatShowCPU
         view.showGPU = settings.floatShowGPU
         view.showMemory = settings.floatShowMemory
+        view.showTemp = settings.floatShowTemp
+        view.showBorder = settings.floatShowBorder
+        view.bgAlpha = CGFloat(settings.floatOpacity)
         view.displayUnit = settings.displayUnit
         view.dataUnit = settings.dataUnit
 
@@ -195,6 +198,9 @@ private class FloatingWindowView: NSView {
     var showCPU = true
     var showGPU = true
     var showMemory = true
+    var showTemp = true
+    var showBorder = false
+    var bgAlpha: CGFloat = 0.85
     var displayUnit: DisplayUnit = .auto
     var dataUnit: DataUnit = .auto
 
@@ -208,7 +214,7 @@ private class FloatingWindowView: NSView {
     private static let gpuColor = NSColor(red: 0x4e/255.0, green: 0x8c/255.0, blue: 0xf7/255.0, alpha: 1.0)
     private static let memoryColor = NSColor(red: 0x38/255.0, green: 0xdf/255.0, blue: 0xc4/255.0, alpha: 1.0)
     private static let textWhite = NSColor(white: 0.95, alpha: 1.0)
-    private static let bgColor = NSColor(white: 0.1, alpha: 0.85)
+    private var bgColor: NSColor { NSColor(white: 0.1, alpha: bgAlpha) }
 
     override var isFlipped: Bool { true }
 
@@ -295,8 +301,14 @@ private class FloatingWindowView: NSView {
         let bgRect = bounds.insetBy(dx: 2, dy: 2)
         let bgPath = CGPath(roundedRect: bgRect, cornerWidth: 10, cornerHeight: 10, transform: nil)
         ctx.addPath(bgPath)
-        ctx.setFillColor(Self.bgColor.cgColor)
+        ctx.setFillColor(bgColor.cgColor)
         ctx.fillPath()
+        if showBorder {
+            ctx.addPath(bgPath)
+            ctx.setStrokeColor(NSColor(white: 0.45, alpha: 0.5).cgColor)
+            ctx.setLineWidth(0.5)
+            ctx.strokePath()
+        }
 
         // Draw rows - centered vertically
         let totalContentHeight = CGFloat(rows.count) * Self.rowHeight
@@ -334,17 +346,17 @@ private class FloatingWindowView: NSView {
         }
 
         if showCPU {
-            let tempStr = cpuTemp.map { String(format: "  %.0f°C", $0) } ?? ""
+            let tempStr = showTemp ? (cpuTemp.map { String(format: "  %.0f°C", $0) } ?? "") : ""
             rows.append(("CPU", Self.cpuColor, String(format: "%.1f%%", cpuUsage) + tempStr))
         }
 
         if showGPU {
-            let tempStr = gpuTemp.map { String(format: "  %.0f°C", $0) } ?? ""
+            let tempStr = showTemp ? (gpuTemp.map { String(format: "  %.0f°C", $0) } ?? "") : ""
             rows.append(("GPU", Self.gpuColor, String(format: "%.1f%%", gpuUsage) + tempStr))
         }
 
         if showMemory {
-            let tempStr = memTemp.map { String(format: "  %.0f°C", $0) } ?? ""
+            let tempStr = showTemp ? (memTemp.map { String(format: "  %.0f°C", $0) } ?? "") : ""
             rows.append(("MEM", Self.memoryColor, String(format: "%.1f%%", memoryUsage) + tempStr))
         }
 
