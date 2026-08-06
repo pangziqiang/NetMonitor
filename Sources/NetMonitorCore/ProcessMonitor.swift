@@ -33,6 +33,13 @@ public class ProcessMonitor: ObservableObject {
         get { _isActiveLock.lock(); defer { _isActiveLock.unlock() }; return _isActive }
         set { _isActiveLock.lock(); defer { _isActiveLock.unlock() }; _isActive = newValue }
     }
+    /// 独立"进程与连接"窗口打开时也激活采样（与 popover 的 isActive 独立叠加）
+    private let _windowActiveLock = NSLock()
+    private var _isWindowActive = false
+    public var isWindowActive: Bool {
+        get { _windowActiveLock.lock(); defer { _windowActiveLock.unlock() }; return _isWindowActive }
+        set { _windowActiveLock.lock(); _isWindowActive = newValue; _windowActiveLock.unlock() }
+    }
     public var maxProcesses = 8
     public let processorCount: Int
 
@@ -61,7 +68,7 @@ public class ProcessMonitor: ObservableObject {
     private let tickQueue = DispatchQueue(label: "com.opencode.networkmonitor.process", qos: .utility)
 
     public func tick() {
-        guard isActive else { return }
+        guard isActive || isWindowActive else { return }
 
         tickQueue.async { [weak self] in
             guard let self else { return }
@@ -119,7 +126,7 @@ public class ProcessMonitor: ObservableObject {
 
     private func tickNetwork() {
         networkQueue.async { [weak self] in
-            guard let self, self.isActive else { return }
+            guard let self, self.isActive || self.isWindowActive else { return }
             let now = Date()
 
             // 复用常驻 nettop 的累计数据（ProcessNetworkReader），做差分得到速率。
