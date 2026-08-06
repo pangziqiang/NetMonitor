@@ -1208,6 +1208,26 @@ public class DatabaseManager {
         }
     }
 
+    /// 最近的应用事件日志（用于设置页日志查看器）。
+    public func recentEvents(limit: Int = 200) -> [(timestamp: String, category: String, event: String, detail: String?)] {
+        guard let rdb = readDb else { return [] }
+        var stmt: OpaquePointer?
+        let sql = "SELECT timestamp, category, event, detail FROM app_events ORDER BY id DESC LIMIT ?"
+        guard sqlite3_prepare_v2(rdb, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int(stmt, 1, Int32(max(1, min(limit, 1000))))
+        var result: [(String, String, String, String?)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let ts = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+            let cat = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+            let event = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+            var detail: String?
+            if let d = sqlite3_column_text(stmt, 3) { detail = String(cString: d) }
+            result.append((ts, cat, event, detail))
+        }
+        return result
+    }
+
     private func _insertEvent(ts: String, category: String, event: String, detail: String?) {
         guard let db else { return }
         var stmt: OpaquePointer?

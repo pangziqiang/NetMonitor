@@ -6,6 +6,7 @@ struct PermissionsView: View {
     @State private var hardware: HardwareInfo?
     @State private var isMonitoring = true  // engine always active while app runs
     @State private var accessibilityGranted = AXIsProcessTrusted()
+    @State private var logs: [(timestamp: String, category: String, event: String, detail: String?)] = []
     @EnvironmentObject var settings: AppSettings
     @Environment(\.colorScheme) var colorScheme
     private var theme: ThemeColors { colorScheme == .dark ? .dark : .light }
@@ -64,9 +65,54 @@ struct PermissionsView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(L10n.tr("Export Diagnostics"))
             }
+
+            settingsSection(L10n.tr("Logs"), textColor: theme.textMuted) {
+                HStack {
+                    Text("\(L10n.tr("Recent Logs")) · \(logs.count)")
+                        .font(.system(size: 10))
+                        .foregroundColor(theme.textMuted)
+                    Spacer()
+                    Button(L10n.tr("Refresh")) {
+                        loadLogs()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.bottom, 4)
+
+                if logs.isEmpty {
+                    Text(L10n.tr("No Logs"))
+                        .font(.system(size: 11))
+                        .foregroundColor(theme.textMuted)
+                        .padding(.vertical, 6)
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(logs.enumerated()), id: \.offset) { _, log in
+                            HStack(alignment: .top, spacing: 6) {
+                                Text(logTimestamp(log.timestamp))
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(theme.textMuted)
+                                    .frame(width: 92, alignment: .leading)
+                                Text(log.category)
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(categoryColor(log.category))
+                                    .frame(width: 52, alignment: .leading)
+                                Text(log.detail.map { "\(log.event) · \($0)" } ?? log.event)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(theme.textSecondary)
+                                    .lineLimit(1)
+                                    .help(log.detail ?? log.event)
+                                Spacer()
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 220)
+                }
+            }
         }
         .onAppear {
             accessibilityGranted = AXIsProcessTrusted()
+            loadLogs()
             DispatchQueue.global(qos: .userInitiated).async {
                 let info = HardwareInfo.load()
                 DispatchQueue.main.async {
@@ -142,6 +188,31 @@ struct PermissionsView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func loadLogs() {
+        logs = DatabaseManager.shared?.recentEvents(limit: 200) ?? []
+    }
+
+    private func logTimestamp(_ iso: String) -> String {
+        guard let date = iso8601Date(from: iso) else { return String(iso.suffix(12)) }
+        return Self.logTimeFormatter.string(from: date)
+    }
+
+    private static let logTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    private func categoryColor(_ category: String) -> Color {
+        switch category {
+        case "lifecycle": return .downloadColor
+        case "userAction": return .cpuColor
+        case "error": return .errorColor
+        default: return theme.textMuted
+        }
     }
 
     private func exportDiagnostics() {
