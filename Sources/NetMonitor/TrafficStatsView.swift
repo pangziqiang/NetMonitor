@@ -1259,8 +1259,9 @@ struct TrafficStatsView: View {
     /// 避免 3 秒定时器每轮都触发整页 SwiftUI 重算与 CG 重绘。
     private func publishPage(_ newPage: BarChartPage, dn: [UInt64], up: [UInt64], window: [String]) {
         var fp = window.joined().hashValue
-        for v in dn { fp = fp &* 31 &+ Int(v) }
-        for v in up { fp = fp &* 31 &+ Int(v) }
+        // 量化到 1MB：微小流量波动不触发整页重建/重绘，避免周期性 CPU 尖峰
+        for v in dn { fp = fp &* 31 &+ Int(v / 1_048_576) }
+        for v in up { fp = fp &* 31 &+ Int(v / 1_048_576) }
         if fp != lastPageFingerprint {
             page = newPage
             lastPageFingerprint = fp

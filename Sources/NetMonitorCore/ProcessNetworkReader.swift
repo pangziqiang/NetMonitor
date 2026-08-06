@@ -233,8 +233,6 @@ final class ProcessNetworkReader {
         }
         accumLock.unlock()
 
-        for e in entries {
-            DatabaseManager.shared?.accumulateProcessTraffic(pid: e.pid, name: e.name, startTime: e.startTime, down: e.down, up: e.up)
-        }
+        DatabaseManager.shared?.accumulateProcessTrafficBatch(entries)
     }
 }

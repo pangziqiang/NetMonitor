@@ -338,8 +338,9 @@ public class DatabaseManager {
     }
 
     /// Accumulates per-process traffic for the current minute using UPSERT.
-    public func accumulateProcessTraffic(pid: Int32, name: String, startTime: time_t, down: UInt64, up: UInt64) {
-        guard down > 0 || up > 0 else { return }
+    /// 批量写入进程流量（单事务 + 复用 prepared statement），避免逐条异步插入的周期 CPU 尖峰。
+    public func accumulateProcessTrafficBatch(_ entries: [(pid: Int32, name: String, startTime: time_t, down: UInt64, up: UInt64)]) {
+        guard !entries.isEmpty else { return }
         let minute = iso8601String(from: Date())
         let minuteKey = String(minute.prefix(16)) + ":00.000Z"
 
@@ -360,16 +361,19 @@ public class DatabaseManager {
                 return
             }
             defer { sqlite3_finalize(stmt) }
-            sqlite3_bind_int(stmt, 1, pid)
-            sqlite3_bind_text(stmt, 2, name, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_int64(stmt, 3, Int64(startTime))
-            sqlite3_bind_text(stmt, 4, minuteKey, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_int64(stmt, 5, Int64(down))
-            sqlite3_bind_int64(stmt, 6, Int64(up))
-            let rc = sqlite3_step(stmt)
-            if rc != SQLITE_DONE {
-                os_log(.error, log: log, "accumulateProcessTraffic step failed: %d", rc)
+            do { try self.exec("BEGIN IMMEDIATE", on: db) } catch {}
+            for e in entries {
+                sqlite3_reset(stmt)
+                sqlite3_clear_bindings(stmt)
+                sqlite3_bind_int(stmt, 1, e.pid)
+                sqlite3_bind_text(stmt, 2, e.name, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_int64(stmt, 3, Int64(e.startTime))
+                sqlite3_bind_text(stmt, 4, minuteKey, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_int64(stmt, 5, Int64(e.down))
+                sqlite3_bind_int64(stmt, 6, Int64(e.up))
+                sqlite3_step(stmt)
             }
+            do { try self.exec("COMMIT", on: db) } catch {}
         }
     }
 
