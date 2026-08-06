@@ -58,6 +58,8 @@ struct TrafficStatsView: View {
     @State private var dayWindowEndStr = ""
     /// 日视图箭头步进：选"时间段"=24（整窗口翻页），选"单日结束日期"=1（滚动条逐日滑动）
     @State private var dayArrowStep = 24
+    /// 月视图窗口起点（YYYY-MM）；空 = 当年 1 月
+    @State private var monthWindowStartStr = ""
     /// 页面数据指纹：数据未变化时跳过整页重建/重绘（避免 3 秒定时器空转）
     @State private var lastPageFingerprint = -1
     /// 自定义日期下拉面板（替代系统 Picker 菜单，避免选中早期日期时菜单向上弹出被遮挡）
@@ -88,6 +90,7 @@ struct TrafficStatsView: View {
         .onChange(of: timeRange) { _, _ in todayBaseLoaded = false; loadData() }
         .onChange(of: selectedDateStr) { _, _ in todayBaseLoaded = false; if timeRange == .hour { loadData() } }
         .onChange(of: dayWindowEndStr) { _, _ in if timeRange == .day { loadData() } }
+        .onChange(of: monthWindowStartStr) { _, _ in if timeRange == .month { loadData() } }
         .sheet(isPresented: $showDetailSheet) {
             processDetailSheet
         }
@@ -142,6 +145,11 @@ struct TrafficStatsView: View {
             if timeRange == .day {
                 Divider().frame(height: 16)
                 dayRangeControl
+            }
+
+            if timeRange == .month {
+                Divider().frame(height: 16)
+                monthRangePager
             }
 
             Spacer()
@@ -395,6 +403,72 @@ struct TrafficStatsView: View {
     private var daySingleDates: [String] {
         let alignedEnds = Set(dayWindowOptions.map { $0.end })
         return availableDateStrs.filter { !alignedEnds.contains($0) }
+    }
+
+    // MARK: - 月视图翻页（24 个月窗口，◀▶ 按 12 个月步进）
+
+    private var monthRangePager: some View {
+        HStack(spacing: 6) {
+            stepButton(systemImage: "chevron.left", enabled: monthCanGoEarlier) {
+                shiftMonthWindow(-12)
+            }
+            Text(monthRangeLabel)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(theme.textSecondary)
+                .frame(minWidth: 150)
+            stepButton(systemImage: "chevron.right", enabled: monthCanGoLater) {
+                shiftMonthWindow(+12)
+            }
+        }
+    }
+
+    private var monthDefaultStartKey: String {
+        "\(Calendar.current.component(.year, from: Date()))-01"
+    }
+
+    private var monthStartKey: String {
+        monthWindowStartStr.isEmpty ? monthDefaultStartKey : monthWindowStartStr
+    }
+
+    private var monthCanGoEarlier: Bool {
+        guard let start = iso8601Date(from: monthStartKey + "-01T00:00:00.000Z"),
+              let back = Calendar.current.date(byAdding: .month, value: -12, to: start),
+              let backEnd = Calendar.current.date(byAdding: .month, value: 23, to: back),
+              let earliest = availableDateStrs.last,
+              let earliestDate = iso8601Date(from: earliest + "T00:00:00.000Z") else { return false }
+        return backEnd >= earliestDate
+    }
+
+    private var monthCanGoLater: Bool {
+        monthStartKey < monthDefaultStartKey
+    }
+
+    private func shiftMonthWindow(_ delta: Int) {
+        guard let start = iso8601Date(from: monthStartKey + "-01T00:00:00.000Z"),
+              let target = Calendar.current.date(byAdding: .month, value: delta, to: start) else { return }
+        let targetKey = String(iso8601String(from: target).prefix(7))
+        if delta > 0 {
+            // 右翻不能越过"当年 1 月"窗口；超出则直接落回默认
+            if targetKey > monthDefaultStartKey {
+                guard monthStartKey != monthDefaultStartKey else { return }
+                monthWindowStartStr = monthDefaultStartKey
+                return
+            }
+        } else {
+            guard let earliest = availableDateStrs.last else { return }
+            let earliestKey = String(earliest.prefix(7))
+            guard let targetEnd = Calendar.current.date(byAdding: .month, value: 23, to: target),
+                  String(iso8601String(from: targetEnd).prefix(7)) >= earliestKey else { return }
+        }
+        guard targetKey != monthStartKey else { return }
+        monthWindowStartStr = targetKey
+    }
+
+    private var monthRangeLabel: String {
+        guard let start = iso8601Date(from: monthStartKey + "-01T00:00:00.000Z"),
+              let end = Calendar.current.date(byAdding: .month, value: 23, to: start) else { return "" }
+        let endKey = String(iso8601String(from: end).prefix(7))
+        return "\(monthStartKey) ~ \(endKey)"
     }
 
     private func dayRangeText(start: Date, end: Date) -> String {
@@ -882,10 +956,11 @@ struct TrafficStatsView: View {
             }
         }
         
-        // 从当年1月开始
+        // 窗口起点：默认当年 1 月；可翻页回看往年（每页 24 个月，◀▶ 按 12 个月步进）
         let year = cal.component(.year, from: now)
-        let isoJan = "\(year)-01-01T00:00:00.000Z"
-        guard let january = iso8601Date(from: isoJan) else {
+        let defaultStartKey = "\(year)-01"
+        let startKey = monthWindowStartStr.isEmpty ? defaultStartKey : monthWindowStartStr
+        guard let january = iso8601Date(from: startKey + "-01T00:00:00.000Z") else {
             page = nil; return
         }
 
