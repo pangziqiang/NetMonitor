@@ -161,6 +161,24 @@ struct TrafficStatsView: View {
                 monthRangePager
             }
 
+            if canReturnToToday {
+                Button {
+                    resetToToday()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.uturn.backward").font(.system(size: 10))
+                        Text(L10n.tr("Today")).font(.system(size: 11))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(theme.textMuted.opacity(0.06))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .foregroundColor(.downloadColor)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+
             Spacer()
 
             Button {
@@ -494,6 +512,27 @@ struct TrafficStatsView: View {
               let end = Calendar.current.date(byAdding: .month, value: 23, to: start) else { return "" }
         let endKey = String(iso8601String(from: end).prefix(7))
         return "\(monthStartKey) ~ \(endKey)"
+    }
+
+    private var canReturnToToday: Bool {
+        switch timeRange {
+        case .hour: return !selectedDateStr.isEmpty && selectedDateStr != currentDateStamp()
+        case .day: return dayEndDate != currentDateStamp()
+        case .month: return monthStartKey != monthDefaultStartKey
+        }
+    }
+
+    private func resetToToday() {
+        switch timeRange {
+        case .hour:
+            selectedDateStr = currentDateStamp()
+            todayBaseLoaded = false
+            loadData()
+        case .day:
+            dayWindowEndStr = ""
+        case .month:
+            monthWindowStartStr = ""
+        }
     }
 
     private func dayRangeText(start: Date, end: Date) -> String {
