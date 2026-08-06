@@ -20,6 +20,13 @@ private func gpuUInt64(from stats: [String: Any], _ key: String) -> UInt64? {
 }
 
 private func readGPUUtilization(from stats: [String: Any]) -> Double? {
+    // AMD dGPU (Intel Macs): value is already a percentage 0-100
+    for key in ["Device Utilization %", "GPU Activity(%)"] {
+        if let n = stats[key] as? NSNumber {
+            return n.doubleValue
+        }
+    }
+    // Apple Silicon / others: fraction 0-1, needs *100
     let keys: [String] = [
         "GPU Core Utilization",
         "GPU Busy",
